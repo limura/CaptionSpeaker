@@ -37,5 +37,11 @@
   },
   "OptionsPageIsRateMaxStrechTextWarning": {
     "message": "如果設置了某個速度，某些揚聲器可能無法大聲朗讀，或者可能會忽略速度設置。因此，在打開此選項後，請務必執行讀數測試以確保按預期執行了讀數。 拜託"
+  },
+  "OptionsPageIsStopIfNewSpeech": {
+    "message": "進行新的發聲時，停止上一個發聲（這可能是在字幕過多時，防止閱讀字幕延遲的一種措施）"
+  },
+  "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
+    "message": "如果默認與字幕設置語言使用相同語言的字幕，請不要說話（由於它是實驗功能，因此可能無法正常工作）"
   }
 }

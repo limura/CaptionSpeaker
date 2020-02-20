@@ -37,5 +37,11 @@
   },
   "OptionsPageIsRateMaxStrechTextWarning": {
     "message": "ある程度の速度以上を設定すると読み上げられなくなったり速度設定が無視される話者が存在するため、このオプションをONにした後は、必ず読み上げテストを行い、意図通りに読み上げが行われる事を確認してください。"
+  },
+  "OptionsPageIsStopIfNewSpeech": {
+    "message": "新しく発話する時に前の発話を止める(字幕の量が多い場合に字幕読み上げが遅れてしまう事への対策になるかもしれません)"
+  },
+  "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
+    "message": "発話設定の言語と同じ言語の字幕がdefaultの場合、発話をしない(実験的機能ですのでうまく動作しない場合があります)"
   }
 }

@@ -37,5 +37,11 @@
   },
   "OptionsPageIsRateMaxStrechTextWarning": {
     "message": "如果设置了某个速度，某些扬声器可能无法大声朗读，或者可能会忽略速度设置。因此，在打开此选项后，请务必执行读数测试并确认已按预期执行了读数。 拜托"
+  },
+  "OptionsPageIsStopIfNewSpeech": {
+    "message": "进行新的发声时，停止上一个发声（这可能是在字幕过多时，防止阅读字幕延迟的一种措施）"
+  },
+  "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
+    "message": "如果默认使用与语音设置语言相同的语言的字幕，请不要说（由于它是实验功能，因此可能无法正常工作）"
   }
 }

@@ -5,6 +5,7 @@ var prevSpeakTime = "";
 var playLocale = window.navigator.language;
 var captionData = {};
 var isEnabled = false;
+var isStopIfNewSpeech = false;
 
 var voicePitch = 1.0;
 var voiceRate = 1.6;
@@ -153,6 +154,9 @@ function AddSpeechQueue(text){
   utt.rate = voiceRate;
   utt.volume = voiceVolume;
   utt.onerror = function(event){console.log("SpeechSynthesisUtterance Event onError", event);};
+  if(isStopIfNewSpeech){
+    speechSynthesis.cancel();
+  }
   speechSynthesis.speak(utt);
 }
 
@@ -200,12 +204,22 @@ function UpdateCaptionData(){
   FetchCaptionData();
 }
 
-function LoadIsEnabled(){
-  chrome.storage.sync.get(["isEnabled"], (result)=>{
+function LoadBooleanSettings(){
+  chrome.storage.sync.get(["isEnabled", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo"], (result)=>{
     if(result?.isEnabled){
       isEnabled = true;
     }else{
       isEnabled = false;
+    }
+    if(result?.isStopIfNewSpeech){
+      isStopIfNewSpeech = true;
+    }else{
+      isStopIfNewSpeech = false;
+    }
+    if(result?.isDisableSpeechIfSameLocaleVideo){
+      isDisableSpeechIfSameLocaleVideo = true;
+    }else{
+      isDisableSpeechIfSameLocaleVideo = false;
     }
   });
 }
@@ -228,8 +242,13 @@ chrome.runtime.onMessage.addListener(
       UpdateIsEnabled(isEnabled);
       speechSynthesis.cancel();
       break;
-    case "LoadIsEnabled":
-      LoadIsEnabled();
+    case "SettingsUpdated":
+      LoadBooleanSettings();
+      LoadVoiceSettings();
+      UpdateCaptionData();
+      break;
+    case "LoadBooleanSettings":
+      LoadBooleanSettings();
       break;
     default:
       break;
@@ -237,7 +256,7 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
-LoadIsEnabled();
+LoadBooleanSettings();
 LoadVoiceSettings();
 UpdateCaptionData();
 // ビデオの再生位置を 0.5秒間隔 で確認するようにします

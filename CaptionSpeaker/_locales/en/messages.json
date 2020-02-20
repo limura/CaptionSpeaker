@@ -37,5 +37,11 @@
   },
   "OptionsPageIsRateMaxStrechTextWarning": {
     "message": "Some speakers may not be able to read aloud if a certain speed is set, or the speed setting may be ignored.Therefore, after turning this option ON, always perform a reading test and confirm that reading is performed as intended. please."
+  },
+  "OptionsPageIsStopIfNewSpeech": {
+    "message": "Stop the previous utterance when a new utterance is made (this may be a measure against delays in reading subtitles when there is a large amount of subtitles)"
+  },
+  "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
+    "message": "If the subtitle of the same language as the utterance setting language is default, do not speak (it may not work well because it is an experimental function)"
   }
 }

@@ -44,9 +44,9 @@ chrome.pageAction.onClicked.addListener((tab)=>{
     let isEnabled = result.isEnabled;
     AssignPageActionIcon(tab.id, !isEnabled);
     if(isEnabled){
-      chrome.storage.sync.set({"isEnabled": false}, ()=>{chrome.tabs.sendMessage(tab.id, {"type": "LoadIsEnabled"});});
+      chrome.storage.sync.set({"isEnabled": false}, ()=>{chrome.tabs.sendMessage(tab.id, {"type": "LoadBooleanSettings"});});
     }else{
-      chrome.storage.sync.set({"isEnabled": true}, ()=>{chrome.tabs.sendMessage(tab.id, {"type": "LoadIsEnabled"});});
+      chrome.storage.sync.set({"isEnabled": true}, ()=>{chrome.tabs.sendMessage(tab.id, {"type": "LoadBooleanSettings"});});
     }
   });
 });
@@ -98,6 +98,12 @@ function StopSpeech(){
   });
 }
 
+function SettingsUpdated(){
+  RunInCurrentTab(function(tab){
+    chrome.tabs.sendMessage(tab.id, {"type": "SettingsUpdated"});
+  });
+}
+
 chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse){
     switch(request.type){
@@ -113,6 +119,9 @@ chrome.runtime.onMessage.addListener(
       break;
     case "RunStopSpeech":
       StopSpeech();
+      break;
+    case "SettingsUpdated":
+      SettingsUpdated();
       break;
     default:
       break;

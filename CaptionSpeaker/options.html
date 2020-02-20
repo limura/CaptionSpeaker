@@ -34,6 +34,12 @@ Speaker: <span id="langSelector">
 <span data-i18n-text="OptionsPageSampleTextTitle">sample text</span>: <input type="text" name="testText" id="testText" size="80" data-i18n-value="OptionsPageSampleTextValue" value="メロスは激怒した。必ず、かの邪智暴虐の王を除かなければならぬと決意した。"/>
 </div>
 <div>
+<label for="isStopIfNewSpeech" style="cursor: pointer"><input type="checkbox" id="isStopIfNewSpeech" name="isStopIfNewSpeech" value="1"><span data-i18n-text="OptionsPageIsStopIfNewSpeech">新しく発話する時に前の発話を止める(字幕の量が多い場合に字幕読み上げが遅れてしまう事への対策になるかもしれません)</span></label>
+</div>
+<div>
+<label for="isDisableSpeechIfSameLocaleVideo" style="cursor: pointer"><input type="checkbox" id="isDisableSpeechIfSameLocaleVideo" name="isDisableSpeechIfSameLocaleVideo" value="1"><span data-i18n-text="OptionsPageIsDisableSpeechIfSameLocaleVideo">発話設定の言語と同じ言語の字幕がdefaultの場合、発話をしない(実験的機能ですのでうまく動作しない場合があります)</span></label>
+</div>
+<div>
 <button id="voiceSelectorTest">Test</button>
 <button id="voiceSettingReset">Reset</button>
 <button id="save">Save</button><span id="savedInfomation"></span>

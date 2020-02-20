@@ -97,6 +97,14 @@ function getVolume(){
   return document.getElementById("volume").value;
 }
 
+function getIsStopIfNewSpeech(){
+  return document.getElementById("isStopIfNewSpeech").checked;
+}
+
+function getIsDisableSpeechIfSameLocaleVideo(){
+  return document.getElementById("isDisableSpeechIfSameLocaleVideo").checked;
+}
+
 function getTestText(){
   let text = document.getElementById("testText").value;
   if(!text){
@@ -147,8 +155,11 @@ function saveButtonClicked(voices, savedInformationElement){
   chrome.storage.sync.set({
     "pitch": getPitch(),
     "rate": getRate(),
-    "volume": getVolume()
+    "volume": getVolume(),
+    "isStopIfNewSpeech": getIsStopIfNewSpeech(),
+    "isDisableSpeechIfSameLocaleVideo": getIsDisableSpeechIfSameLocaleVideo()
   });
+  chrome.runtime.sendMessage({"type": "SettingsUpdated"});
 
   savedInformationElement.innerHTML = "saved!";
   setTimeout(function(){
@@ -194,11 +205,17 @@ function loadSettings(voices){
   if("volume" in storage){
     document.getElementById("volume").value = storage.volume;
   }
+  if("isStopIfNewSpeech" in storage){
+    document.getElementById("isStopIfNewSpeech").checked = storage.isStopIfNewSpeech;
+  }
+  if("isDisableSpeechIfSameLocaleVideo" in storage){
+    document.getElementById("isDisableSpeechIfSameLocaleVideo").checked = storage.isDisableSpeechIfSameLocaleVideo;
+  }
   });
 }
 
 function clearSettings(){
-  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume"]);
+  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo"]);
   location.reload();
 }
 
