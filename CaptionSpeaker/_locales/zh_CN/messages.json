@@ -1,0 +1,41 @@
+{
+  "appDescription": {
+    "message": "阅读YouTube字幕"
+  },
+  "PageActionDefaultTitle": {
+    "message": "开始或停止字幕阅读\n(右键单击设置，然后选择“选项”)"
+  },
+  "KeyboardShortcutNameStartSpeech": {
+    "message": "开始阅读"
+  },
+  "KeyboardShortcutNameStopSpeech": {
+    "message": "别读了"
+  },
+  "OptionsPagePitchTitle": {
+    "message": "音高"
+  },
+  "OptionsPageRateTitle": {
+    "message": "率"
+  },
+  "OptionsPageVolumeTitle": {
+    "message": "音量"
+  },
+  "OptionsPageSampleTextTitle": {
+    "message": "用于阅读测试的文本"
+  },
+  "OptionsPageSampleTextValue": {
+    "message": "阅读测试中写的句子"
+  },
+  "OptionsPageKeyboardShortcutsLinkText": {
+    "message": "打开键盘快捷键设置"
+  },
+  "OptionsPageDonateText": {
+    "message": "可以以捐赠的形式帮助CaptionSpeaker开发"
+  },
+  "OptionsPageIsRateMaxStrechText": {
+    "message": "增加速度设置限制（不建议）"
+  },
+  "OptionsPageIsRateMaxStrechTextWarning": {
+    "message": "如果设置了某个速度，某些扬声器可能无法大声朗读，或者可能会忽略速度设置。因此，在打开此选项后，请务必执行读数测试并确认已按预期执行了读数。 拜托"
+  }
+}

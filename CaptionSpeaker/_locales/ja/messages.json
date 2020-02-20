@@ -1,0 +1,41 @@
+{
+  "appDescription": {
+    "message": "Youtubeの字幕を読み上げます"
+  },
+  "PageActionDefaultTitle": {
+    "message": "字幕読み上げの開始又は停止\n(設定は右クリックして「オプション」を選択して下さい)"
+  },
+  "KeyboardShortcutNameEnableEvent": {
+    "message": "読み上げを開始する"
+  },
+  "KeyboardShortcutNameDisableEvent": {
+    "message": "読み上げを停止する"
+  },
+  "OptionsPagePitchTitle": {
+    "message": "Pitch(声の高さ)"
+  },
+  "OptionsPageRateTitle": {
+    "message": "Rate(声の速さ)"
+  },
+  "OptionsPageVolumeTitle": {
+    "message": "Volume(声の大きさ)"
+  },
+  "OptionsPageSampleTextTitle": {
+    "message": "読み上げテスト用文字列"
+  },
+  "OptionsPageSampleTextValue": {
+    "message": "メロスは激怒した。必ず、かの邪智暴虐の王を除かなければならぬと決意した。"
+  },
+  "OptionsPageKeyboardShortcutsLinkText": {
+    "message": "キーボードショートカット設定を開く"
+  },
+  "OptionsPageDonateText": {
+    "message": "CaptionSpeaker の開発に寄付の形で支援する事ができます。"
+  },
+  "OptionsPageIsRateMaxStrechText": {
+    "message": "速度設定の限界を伸ばす(非推奨)"
+  },
+  "OptionsPageIsRateMaxStrechTextWarning": {
+    "message": "ある程度の速度以上を設定すると読み上げられなくなったり速度設定が無視される話者が存在するため、このオプションをONにした後は、必ず読み上げテストを行い、意図通りに読み上げが行われる事を確認してください。"
+  }
+}

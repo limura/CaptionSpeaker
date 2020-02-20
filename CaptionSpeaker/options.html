@@ -1,0 +1,51 @@
+<html>
+<head>
+</head>
+<body>
+<div>
+Voice setting
+<br>
+Speaker: <span id="langSelector">
+<select name="langSelector">
+<option value="DEFAULT">DEFAULT</option>
+<option value="ja-jp">ja-jp</option>
+<option value="en-us">en-us</option>
+</select>
+</span>
+<span id="voiceSelector">
+<select name="voice" disabled>
+<option value="DEFAULT">DEFAULT</option>
+<option value="Kyoko">Kyoko</option>
+</select>
+</span>
+<br>
+<div>
+<span data-i18n-text="OptionsPagePitchTitle">Pitch</span>: <input type="range" name="pitch" id="pitch" min="0" max="2" step="0.01" value="1"/>
+</div>
+<div>
+<span data-i18n-text="OptionsPageRateTitle">Rate</span>: <input type="range" name="rate" id="rate" min="0.1" max="2" step="0.01" value="1"/>
+<span id="rateValue"></span>
+<label for="isRateMaxStrech" style="cursor: pointer"><input type="checkbox" id="isRateMaxStrech" name="isRateMaxStrech" value="1"><span data-i18n-text="OptionsPageIsRateMaxStrechText">速度設定の限界を伸ばす</span><span id="isRateMaxStrechWarningText" data-i18n-text="OptionsPageIsRateMaxStrechTextWarning" style="color: red; display: none;">ある程度の速度以上を設定すると読み上げられなくなったり速度設定が無視される話者が存在するため、このオプションをONにした後は、必ず読み上げテストを行って下さい。</span></label>
+</div>
+<div>
+<span data-i18n-text="OptionsPageVolumeTitle">Volume</span>: <input type="range" name="volume" id="volume" min="0" max="1" step="0.01" value="1"/>
+</div>
+<div>
+<span data-i18n-text="OptionsPageSampleTextTitle">sample text</span>: <input type="text" name="testText" id="testText" size="80" data-i18n-value="OptionsPageSampleTextValue" value="メロスは激怒した。必ず、かの邪智暴虐の王を除かなければならぬと決意した。"/>
+</div>
+<div>
+<button id="voiceSelectorTest">Test</button>
+<button id="voiceSettingReset">Reset</button>
+<button id="save">Save</button><span id="savedInfomation"></span>
+</div>
+<div>
+<a id="configureShortcuts" href="chrome://extensions/shortcuts"><span data-i18n-text="OptionsPageKeyboardShortcutsLinkText">Set keyboard shortcuts</span></a>
+</div>
+<div>
+<span data-i18n-text="OptionsPageDonateText">You can support CaptionSpeaker by donating:</span>
+<div><a href="https://github.com/sponsors/limura">GitHub Sponsors</a></div>
+<div><a href="http://amzn.asia/5arphrL">Amazon wish list link</a></div>
+<hr>
+<script src="options.js"></script>
+</body>
+</html>

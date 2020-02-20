@@ -1,0 +1,41 @@
+{
+  "appDescription": {
+    "message": "Speech YouTube subtitles"
+  },
+  "PageActionDefaultTitle": {
+    "message": "Start or stop subtitle speaking\n(Right-click on the setting and select \"Options\")"
+  },
+  "KeyboardShortcutNameStartSpeech": {
+    "message": "Start speech"
+  },
+  "KeyboardShortcutNameStopSpeech": {
+    "message": "Stop speech"
+  },
+  "OptionsPagePitchTitle": {
+    "message": "Pitch"
+  },
+  "OptionsPageRateTitle": {
+    "message": "Rate"
+  },
+  "OptionsPageVolumeTitle": {
+    "message": "Volume"
+  },
+  "OptionsPageSampleTextTitle": {
+    "message": "Speech sample text"
+  },
+  "OptionsPageSampleTextValue": {
+    "message": "If I speak in the tongues of men or of angels, but do not have love, I am only a resounding gong or a clanging cymbal."
+  },
+  "OptionsPageKeyboardShortcutsLinkText": {
+    "message": "Open keyboard shortcuts settings"
+  },
+  "OptionsPageDonateText": {
+    "message": "You can support CaptionSpeaker by donating:"
+  },
+  "OptionsPageIsRateMaxStrechText": {
+    "message": "Increase the speed limit (Deprecated)"
+  },
+  "OptionsPageIsRateMaxStrechTextWarning": {
+    "message": "Some speakers may not be able to read aloud if a certain speed is set, or the speed setting may be ignored.Therefore, after turning this option ON, always perform a reading test and confirm that reading is performed as intended. please."
+  }
+}
