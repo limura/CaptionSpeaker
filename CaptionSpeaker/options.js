@@ -98,11 +98,11 @@ function getVolume(){
 }
 
 function getIsStopIfNewSpeech(){
-  return document.getElementById("isStopIfNewSpeech").checked;
+  return document.getElementById("isStopIfNewSpeech").checked ? 1 : 0;
 }
 
 function getIsDisableSpeechIfSameLocaleVideo(){
-  return document.getElementById("isDisableSpeechIfSameLocaleVideo").checked;
+  return document.getElementById("isDisableSpeechIfSameLocaleVideo").checked ? 1 : 0;
 }
 
 function getTestText(){
@@ -179,7 +179,7 @@ function selectSelected(selectElement, targetValue){
 }
 
 function loadSettings(voices){
-  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume"], (storage)=>{
+  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo"], (storage)=>{
   if("lang" in storage){
     let lang = storage.lang;
     selectSelected(document.getElementById("langSelector").childNodes[0], lang);
@@ -206,10 +206,10 @@ function loadSettings(voices){
     document.getElementById("volume").value = storage.volume;
   }
   if("isStopIfNewSpeech" in storage){
-    document.getElementById("isStopIfNewSpeech").checked = storage.isStopIfNewSpeech;
+    document.getElementById("isStopIfNewSpeech").checked = storage.isStopIfNewSpeech ? true : false;
   }
   if("isDisableSpeechIfSameLocaleVideo" in storage){
-    document.getElementById("isDisableSpeechIfSameLocaleVideo").checked = storage.isDisableSpeechIfSameLocaleVideo;
+    document.getElementById("isDisableSpeechIfSameLocaleVideo").checked = storage.isDisableSpeechIfSameLocaleVideo ? true : false;
   }
   });
 }

@@ -19,6 +19,10 @@ CaptionSpeaker は youtube で表示される字幕を読み上げる chrome ext
 ## Version 1.0
 最初のリリース
 
+## Version 1.1
+- 新しく発話する時に前の発話を止める オプションを追加
+- 発話設定の言語と同じ言語の字幕がdefaultの場合、発話をしない オプションを追加
+
 # 既知の問題
 
 macOS Catalina では標準の話者での発話が失敗することがあるようです。

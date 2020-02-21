@@ -6,6 +6,9 @@ var playLocale = window.navigator.language;
 var captionData = {};
 var isEnabled = false;
 var isStopIfNewSpeech = false;
+var isDisableSpeechIfSameLocaleVideo = false;
+var videoLengthSeconds = -1;
+var guessedOriginalCaptionLanguage = undefined;
 
 var voicePitch = 1.0;
 var voiceRate = 1.6;
@@ -40,6 +43,12 @@ function GetCaptionDataUrl(){
   let player_response_obj = JSON.parse(player_response);
   //console.log("player_response", player_response_obj);
 
+  // GetCaptionDataUrl() という関数なのに、ここでは怪しく player_response を読み込んでいます。('A`)
+  let lengthSeconds = VideoLengthSecondsFromPlayerResponse(player_response_obj);
+  if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
+  guessedOriginalCaptionLanguage = GuessVideoAutoTransrateOriginalLanguage(player_response_obj);
+  //console.log("guessedOriginalCaptionLanguage", guessedOriginalCaptionLanguage);
+
   // 用意されている字幕でターゲットとなるロケールの物があればそれを使います
   let captionTracks = player_response_obj?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   let playLocaleCaptionBaseUrl = captionTracks.filter(obj => obj?.languageCode == playLocale)[0]?.baseUrl;
@@ -60,6 +69,8 @@ function FetchCaptionData(){
   .then((response)=>{
     return response.json();
   }).then((json)=>{
+    if(guessedOriginalCaptionLanguage == playLocale && isDisableSpeechIfSameLocaleVideo){return;}
+    console.log("FetchCaptionData() pass isDisableSpeechIfSameLocaleVideo check", isDisableSpeechIfSameLocaleVideo, guessedOriginalCaptionLanguage, playLocale);
     captionData = CaptionDataToTimeDict(json);
     console.log("captionData update:", captionData);
   });
@@ -76,6 +87,15 @@ function FormatTimeFromMillisecond(millisecond){
     return hour + ":" + minute + ":" + second;
   }
   return minute + ":" + second;
+}
+
+// player_response から .microformat.playerMicroformatRenderer.lengthSeconds を取り出します
+function VideoLengthSecondsFromPlayerResponse(player_response){
+  return player_response?.videoDetails?.lengthSeconds;
+}
+
+function GuessVideoAutoTransrateOriginalLanguage(player_response){
+  return player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks[0]?.languageCode;
 }
 
 // 字幕のデータを後で使いやすいように加工しておきます。
@@ -155,6 +175,7 @@ function AddSpeechQueue(text){
   utt.volume = voiceVolume;
   utt.onerror = function(event){console.log("SpeechSynthesisUtterance Event onError", event);};
   if(isStopIfNewSpeech){
+    console.log("isStopIfNewSpeech is true");
     speechSynthesis.cancel();
   }
   speechSynthesis.speak(utt);
@@ -174,6 +195,9 @@ function CheckAndSpeech(currentTimeText){
 }
 
 function IsValidVideoDuration(duration, captionData){
+  if(videoLengthSeconds > 0){
+    return Math.abs(videoLengthSeconds - duration) < 4;
+  }
   var maxMillisecond = 0;
   for(let key in captionData){
     let tStartMs = captionData[key]?.tStartMs;
@@ -221,6 +245,7 @@ function LoadBooleanSettings(){
     }else{
       isDisableSpeechIfSameLocaleVideo = false;
     }
+    console.log("LoadBooleanSettings", result, isStopIfNewSpeech, isDisableSpeechIfSameLocaleVideo);
   });
 }
 function UpdateIsEnabled(isEnabled){
