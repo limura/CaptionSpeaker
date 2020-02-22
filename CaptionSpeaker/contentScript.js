@@ -236,6 +236,7 @@ function LoadBooleanSettings(){
       isEnabled = true;
     }else{
       isEnabled = false;
+      speechSynthesis.cancel();
     }
     if(result?.isStopIfNewSpeech){
       isStopIfNewSpeech = true;
