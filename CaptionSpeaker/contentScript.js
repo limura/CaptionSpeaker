@@ -57,6 +57,7 @@ function GetCaptionDataUrl(){
   }
 
   // なさそうなら、captionTracks の先頭の物から対象のロケールに書き換えた物を取得するようにします。
+  if(!captionTracks){ console.log("can not get captionTracks", player_response_obj); return; }
   let baseUrl = captionTracks[0]?.baseUrl;
   if(!baseUrl){ console.log("can not get baseUrl", player_response_obj); return; }
   let origUrl = baseUrl.replace(/,/g, "%2C");
@@ -67,13 +68,14 @@ function FetchCaptionData(){
   let url = GetCaptionDataUrl();
   fetch(url)
   .then((response)=>{
-    return response.json();
+    return response?.json();
   }).then((json)=>{
+    if(!json){return;}
     if(guessedOriginalCaptionLanguage == playLocale && isDisableSpeechIfSameLocaleVideo){return;}
     console.log("FetchCaptionData() pass isDisableSpeechIfSameLocaleVideo check", isDisableSpeechIfSameLocaleVideo, guessedOriginalCaptionLanguage, playLocale);
     captionData = CaptionDataToTimeDict(json);
     console.log("captionData update:", captionData);
-  });
+  }).catch(err=>{console.log("Fetch got error:", err);});
 }
 
 function FormatTimeFromMillisecond(millisecond){
@@ -245,7 +247,6 @@ function LoadBooleanSettings(){
     }else{
       isDisableSpeechIfSameLocaleVideo = false;
     }
-    console.log("LoadBooleanSettings", result, isStopIfNewSpeech, isDisableSpeechIfSameLocaleVideo);
   });
 }
 function UpdateIsEnabled(isEnabled){
