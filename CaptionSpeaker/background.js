@@ -64,7 +64,7 @@ function disableActionButton(tabId){
 
 chrome.tabs.onUpdated.addListener(function(tabId){
   chrome.tabs.get(tabId, function(tab){
-    let url = tab.url;
+    let url = tab?.url;
     if(!isTargetUrl(url)){
       disableActionButton(tabId);
       return;

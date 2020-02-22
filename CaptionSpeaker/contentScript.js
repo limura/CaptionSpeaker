@@ -51,7 +51,7 @@ function GetCaptionDataUrl(){
 
   // 用意されている字幕でターゲットとなるロケールの物があればそれを使います
   let captionTracks = player_response_obj?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  let playLocaleCaptionBaseUrl = captionTracks.filter(obj => obj?.languageCode == playLocale)[0]?.baseUrl;
+  let playLocaleCaptionBaseUrl = captionTracks?.filter(obj => obj?.languageCode == playLocale)[0]?.baseUrl;
   if(playLocaleCaptionBaseUrl){
     return playLocaleCaptionBaseUrl + "&fmt=json3";
   }
@@ -284,5 +284,5 @@ chrome.runtime.onMessage.addListener(
 LoadBooleanSettings();
 LoadVoiceSettings();
 UpdateCaptionData();
-// ビデオの再生位置を 0.5秒間隔 で確認するようにします
-setInterval(CheckVideoCurrentTime, 500);
+// ビデオの再生位置を 0.25秒間隔 で確認するようにします
+setInterval(CheckVideoCurrentTime, 250);
