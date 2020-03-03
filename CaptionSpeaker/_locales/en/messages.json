@@ -1,6 +1,6 @@
 {
   "appDescription": {
-    "message": "Speech YouTube subtitles"
+    "message": "CaptionSpeaker is a chrome extension that allows you to hear subtitles displayed on youtube."
   },
   "PageActionDefaultTitle": {
     "message": "Start or stop subtitle speaking\n(Right-click on the setting and select \"Options\")"

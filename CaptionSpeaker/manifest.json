@@ -2,7 +2,7 @@
   "default_locale": "en",
   "name": "CaptionSpeaker",
   "description": "__MSG_appDescription__",
-  "version": "1.2",
+  "version": "1.2.1",
   "manifest_version": 2,
   "icons": {
     "16": "icon/Icon16.png",

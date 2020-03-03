@@ -1,6 +1,6 @@
 {
   "appDescription": {
-    "message": "阅读YouTube字幕"
+    "message": "CaptionSpeaker是一个Chrome扩展程序，可以通过收听youtube上显示的字幕来收听。"
   },
   "PageActionDefaultTitle": {
     "message": "开始或停止字幕阅读\n(右键单击设置，然后选择“选项”)"

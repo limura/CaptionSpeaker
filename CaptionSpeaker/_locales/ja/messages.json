@@ -1,6 +1,6 @@
 {
   "appDescription": {
-    "message": "Youtubeの字幕を読み上げます"
+    "message": "CaptionSpeaker は youtube で表示される字幕を発話させる事で耳から聞くことができるようにする chrome extension です。"
   },
   "PageActionDefaultTitle": {
     "message": "字幕読み上げの開始又は停止\n(設定は右クリックして「オプション」を選択して下さい)"
