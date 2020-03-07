@@ -5,10 +5,10 @@
   "PageActionDefaultTitle": {
     "message": "开始或停止字幕阅读\n(右键单击设置，然后选择“选项”)"
   },
-  "KeyboardShortcutNameStartSpeech": {
+  "KeyboardShortcutNameEnableEvent": {
     "message": "开始阅读"
   },
-  "KeyboardShortcutNameStopSpeech": {
+  "KeyboardShortcutNameDisableEvent": {
     "message": "别读了"
   },
   "OptionsPagePitchTitle": {

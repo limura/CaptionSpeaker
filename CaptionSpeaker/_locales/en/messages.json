@@ -5,10 +5,10 @@
   "PageActionDefaultTitle": {
     "message": "Start or stop subtitle speaking\n(Right-click on the setting and select \"Options\")"
   },
-  "KeyboardShortcutNameStartSpeech": {
+  "KeyboardShortcutNameEnableEvent": {
     "message": "Start speech"
   },
-  "KeyboardShortcutNameStopSpeech": {
+  "KeyboardShortcutNameDisableEvent": {
     "message": "Stop speech"
   },
   "OptionsPagePitchTitle": {
