@@ -33,9 +33,9 @@ function KickSpeech(tabId, url){
 
 function AssignPageActionIcon(tabId, isEnabled){
   if(isEnabled){
-    chrome.pageAction.setIcon({tabId: tabId, path: "icon/Icon19.png"});
+    chrome.pageAction.setIcon({tabId: tabId, path: {"19": "icon/Icon19.png", "24": "icon/Icon24.png", "32": "icon/Icon32.png"}});
   }else{
-    chrome.pageAction.setIcon({tabId: tabId, path: "icon/IconDark19.png"});
+    chrome.pageAction.setIcon({tabId: tabId, path: {"19": "icon/IconDark19.png", "24": "icon/IconDark24.png", "32": "icon/IconDark32.png"}});
   }
 }
 
