@@ -97,7 +97,11 @@ function VideoLengthSecondsFromPlayerResponse(player_response){
 }
 
 function GuessVideoAutoTransrateOriginalLanguage(player_response){
-  return player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks[0]?.languageCode;
+  let captionTracks = player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if(captionTracks){
+    return captionTracks[0]?.languageCode;
+  }
+  return undefined;
 }
 
 // 字幕のデータを後で使いやすいように加工しておきます。
