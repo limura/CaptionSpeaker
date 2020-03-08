@@ -39,14 +39,22 @@ function AssignPageActionIcon(tabId, isEnabled){
   }
 }
 
+function EnableSpeechSetting(tabID){
+  AssignPageActionIcon(tabID, true);
+  chrome.storage.sync.set({"isEnabled": true}, ()=>{chrome.tabs.sendMessage(tabId, {"type": "LoadBooleanSettings"});});
+}
+function DisableSpeechSetting(tabID){
+  AssignPageActionIcon(tabID, false);
+  chrome.storage.sync.set({"isEnabled": false}, ()=>{chrome.tabs.sendMessage(tabId, {"type": "LoadBooleanSettings"});});
+}
+
 chrome.pageAction.onClicked.addListener((tab)=>{
   chrome.storage.sync.get(["isEnabled"], (result)=>{
     let isEnabled = result.isEnabled;
-    AssignPageActionIcon(tab.id, !isEnabled);
     if(isEnabled){
-      chrome.storage.sync.set({"isEnabled": false}, ()=>{chrome.tabs.sendMessage(tab.id, {"type": "LoadBooleanSettings"});});
+      DisableSpeechSetting(tab.id);
     }else{
-      chrome.storage.sync.set({"isEnabled": true}, ()=>{chrome.tabs.sendMessage(tab.id, {"type": "LoadBooleanSettings"});});
+      EnableSpeechSetting(tab.id);
     }
   });
 });
@@ -131,11 +139,19 @@ chrome.runtime.onMessage.addListener(
 
 chrome.commands.onCommand.addListener(function(command) {
   switch(command){
-  case "start-speech":
-    StartSpeech();
+  case "enableEvent":
+    chrome.tabs.query({"active": true}, (tabs) => {
+      for(i in tabs){
+        EnableSpeechSetting(tabs[i].id);
+      }
+    });
     break;
-  case "stop-speech":
-    StopSpeech();
+  case "disableEvent":
+    chrome.tabs.query({"active": true}, (tabs) => {
+      for(i in tabs){
+        DisableSpeechSetting(tabs[i].id);
+      }
+    });
     break;
   }
 });
