@@ -39,12 +39,12 @@ function AssignPageActionIcon(tabId, isEnabled){
   }
 }
 
-function EnableSpeechSetting(tabID){
-  AssignPageActionIcon(tabID, true);
+function EnableSpeechSetting(tabId){
+  AssignPageActionIcon(tabId, true);
   chrome.storage.sync.set({"isEnabled": true}, ()=>{chrome.tabs.sendMessage(tabId, {"type": "LoadBooleanSettings"});});
 }
-function DisableSpeechSetting(tabID){
-  AssignPageActionIcon(tabID, false);
+function DisableSpeechSetting(tabId){
+  AssignPageActionIcon(tabId, false);
   chrome.storage.sync.set({"isEnabled": false}, ()=>{chrome.tabs.sendMessage(tabId, {"type": "LoadBooleanSettings"});});
 }
 
