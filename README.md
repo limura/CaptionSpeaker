@@ -1,5 +1,7 @@
 CaptionSpeaker は youtube に設定された字幕のうち、指定された言語の字幕があった場合に、それを発話させる事で耳から聞くことができるようにする chrome extension です。
 
+Chrome webstore で<a href="https://chrome.google.com/webstore/detail/captionspeaker/infafaffjndfcflcoemolnggghgoodce">公開されています</a>。
+
 # 使い方
 
 1. CaptionSpeaker のアイコンを右クリックして設定(オプション)を開き、話者設定を適切に設定してsaveする(標準設定では発話に失敗する場合があるので必ず行って下さい)
