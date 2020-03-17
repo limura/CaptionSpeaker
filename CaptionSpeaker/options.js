@@ -195,7 +195,7 @@ function loadSettings(voices){
   if("rate" in storage){
     let rateValue = storage.rate;
     let rate = document.getElementById("rate");
-    if(rateValue >= 2.0){
+    if(rateValue > 2.0){
       document.getElementById("isRateMaxStrech").checked = true;
       rate.max = 10;
     }
