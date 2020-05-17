@@ -98,6 +98,10 @@ function VideoLengthSecondsFromPlayerResponse(player_response){
 
 function GuessVideoAutoTransrateOriginalLanguage(player_response){
   let captionTracks = player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  let autoDetectedCaption = captionTracks?.filter(x=> "kind" in x);
+  if(autoDetectedCaption){
+    return autoDetectedCaption[0]?.languageCode;
+  }
   if(captionTracks){
     return captionTracks[0]?.languageCode;
   }

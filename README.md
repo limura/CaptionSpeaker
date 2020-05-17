@@ -29,6 +29,9 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 - 読み上げをOFFにした時に、発話状態であれば発話をやめるように
 - 読み上げが少し遅れる場合がある問題に対処
 
+## Version 1.3
+- 「発話設定の言語と同じ言語の字幕」の判定基準を少し変更
+
 # 既知の問題
 
 macOS Catalina では標準の話者での発話が失敗することがあるようです。
