@@ -43,5 +43,8 @@
   },
   "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
     "message": "如果默認與字幕設置語言使用相同語言的字幕，請不要說話（由於它是實驗功能，因此可能無法正常工作）"
+  },
+  "OptionsPageIsDisableSpeechIfChaptionDisabled": {
+    "message": "僅在顯示字幕時讀取"
   }
 }

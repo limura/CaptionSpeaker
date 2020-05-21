@@ -43,5 +43,8 @@
   },
   "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
     "message": "発話設定の言語と同じ言語の字幕がdefaultの場合、発話をしない(実験的機能ですのでうまく動作しない場合があります)"
+  },
+  "OptionsPageIsDisableSpeechIfChaptionDisabled": {
+    "message": "字幕が表示されている時だけ読み上げを行うようにする"
   }
 }

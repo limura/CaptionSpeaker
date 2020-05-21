@@ -43,5 +43,8 @@
   },
   "OptionsPageIsDisableSpeechIfSameLocaleVideo": {
     "message": "If the subtitle of the same language as the utterance setting language is default, do not speak (it may not work well because it is an experimental function)"
+  },
+  "OptionsPageIsDisableSpeechIfChaptionDisabled": {
+    "message": "Read only when the subtitles are displayed."
   }
 }

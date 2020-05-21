@@ -7,6 +7,7 @@ var captionData = {};
 var isEnabled = false;
 var isStopIfNewSpeech = false;
 var isDisableSpeechIfSameLocaleVideo = false;
+var isDisableSpeechIfChaptionDisabled = false;
 var videoLengthSeconds = -1;
 var guessedOriginalCaptionLanguage = undefined;
 
@@ -89,6 +90,10 @@ function FormatTimeFromMillisecond(millisecond){
     return hour + ":" + minute + ":" + second;
   }
   return minute + ":" + second;
+}
+
+function CheckCaptionIsDisplaying(){
+  return document.evaluate("//button[contains(@class,'ytp-subtitles-button')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0)?.getAttribute('aria-pressed') == "true";
 }
 
 // player_response から .microformat.playerMicroformatRenderer.lengthSeconds を取り出します
@@ -195,6 +200,7 @@ function AddSpeechQueue(text){
 function CheckAndSpeech(currentTimeText){
   if(!currentTimeText){ console.log("currentTimeText is nil"); return;}
   if(currentTimeText == prevSpeakTime){ return;}
+  if(isDisableSpeechIfChaptionDisabled && !CheckCaptionIsDisplaying()){ return; }
   let caption = captionData[currentTimeText];
   if(caption){
     prevSpeakTime = currentTimeText;
@@ -239,7 +245,7 @@ function UpdateCaptionData(){
 }
 
 function LoadBooleanSettings(){
-  chrome.storage.sync.get(["isEnabled", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo"], (result)=>{
+  chrome.storage.sync.get(["isEnabled", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled"], (result)=>{
     if(result?.isEnabled){
       isEnabled = true;
     }else{
@@ -255,6 +261,11 @@ function LoadBooleanSettings(){
       isDisableSpeechIfSameLocaleVideo = true;
     }else{
       isDisableSpeechIfSameLocaleVideo = false;
+    }
+    if(result?.isDisableSpeechIfChaptionDisabled){
+      isDisableSpeechIfChaptionDisabled = true;
+    }else{
+      isDisableSpeechIfChaptionDisabled = false;
     }
   });
 }
