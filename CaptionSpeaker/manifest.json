@@ -28,7 +28,9 @@
       "32": "icon/Icon32.png"
     }
   },
-  "options_page": "options.html",
+  "options_ui": {
+    "page": "options.html"
+  },
   "commands": {
     "enableEvent": {
       "description": "__MSG_KeyboardShortcutNameEnableEvent__"
