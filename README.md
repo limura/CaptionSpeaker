@@ -35,6 +35,9 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 ## Version 1.4
 - 「字幕が表示されている時だけ読み上げを行うようにする」設定項目を追加
 
+## Version 1.4.2
+- 字幕を読み込めなくなっていた問題を修正(2020/11/26)
+
 # 既知の問題
 
 macOS Catalina では標準の話者での発話が失敗することがあるようです。

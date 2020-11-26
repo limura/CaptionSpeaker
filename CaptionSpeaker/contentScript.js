@@ -1,6 +1,6 @@
 let speechSynthesis = window.speechSynthesis;
 let TARGET_ID = "CaptionSpeakerData";
-let PLAYER_RESPONSE_ATTRIBUTE_NAME = "ytplayer.config.args.player_response";
+let PLAYER_RESPONSE_ATTRIBUTE_NAME = "ytplayer.config.args.raw_player_response";
 var prevSpeakTime = "";
 var playLocale = window.navigator.language;
 var captionData = {};
@@ -18,7 +18,7 @@ var voiceVoice = undefined;
 
 // Youtubeのscript側で設定している ytplayer.config.args.player_response (中身は JSON文字列) を、bodyに<script></script> を埋め込む形で取り出します。
 let INJECT_SCRIPT = `
-document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", ytplayer.config.args.player_response)
+document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", JSON.stringify(ytplayer.config.args.raw_player_response))
 `;
 
 function RemoveInjectElement(idText){
@@ -41,7 +41,13 @@ function GetCaptionDataUrl(){
   if(!element){ console.log("can not get element"); return; }
   let player_response = element.getAttribute(PLAYER_RESPONSE_ATTRIBUTE_NAME);
   if(!player_response){ console.log("can not get player_response", element); return; }
-  let player_response_obj = JSON.parse(player_response);
+  var player_response_obj;
+  try {
+    player_response_obj = JSON.parse(player_response);
+  }catch(e){
+    console.log("player_response JSON.parse() error:", e);
+    return;
+  }
   //console.log("player_response", player_response_obj);
 
   // GetCaptionDataUrl() という関数なのに、ここでは怪しく player_response を読み込んでいます。('A`)
@@ -236,6 +242,12 @@ function CheckVideoCurrentTime(){
   CheckAndSpeech(timeText);
 }
 
+function WatchYtplayerLoadForCaptionData() {
+  if(Object.keys(captionData).length > 0) { return; }
+  UpdateCaptionData();
+  setTimeout(WatchYtplayerLoadForCaptionData, 500);
+}
+
 function UpdateCaptionData(){
   RemoveInjectElement(TARGET_ID);
   // Youtubeのscriptが設定したデータを読み取るために body に <script> を仕込みます
@@ -304,6 +316,6 @@ chrome.runtime.onMessage.addListener(
 
 LoadBooleanSettings();
 LoadVoiceSettings();
-UpdateCaptionData();
+WatchYtplayerLoadForCaptionData();
 // ビデオの再生位置を 0.25秒間隔 で確認するようにします
 setInterval(CheckVideoCurrentTime, 250);
