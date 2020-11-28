@@ -19,8 +19,8 @@ var voiceVoice = undefined;
 // Youtubeのscript側で設定している ytplayer.config.args.player_response (中身は JSON文字列) を、bodyに<script></script> を埋め込む形で取り出します。
 let INJECT_SCRIPT = `
 (function(){
-  let player_response = ytplayer.config.args.player_response;
-  let raw_player_response = ytplayer.config.args.raw_player_response;
+  let raw_player_response = ytplayer?.config?.args?.raw_player_response;
+  let player_response = ytplayer?.config?.args?.player_response;
   if(player_response){
     document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", player_response);
     return;
