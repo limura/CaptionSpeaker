@@ -18,7 +18,17 @@ var voiceVoice = undefined;
 
 // Youtubeのscript側で設定している ytplayer.config.args.player_response (中身は JSON文字列) を、bodyに<script></script> を埋め込む形で取り出します。
 let INJECT_SCRIPT = `
-document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", JSON.stringify(ytplayer.config.args.raw_player_response))
+(function(){
+  let player_response = ytplayer.config.args.player_response;
+  let raw_player_response = ytplayer.config.args.raw_player_response;
+  if(player_response){
+    document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", player_response);
+    return;
+  }
+  if(raw_player_response){
+    document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", JSON.stringify(raw_player_response))
+  }
+})();
 `;
 
 function RemoveInjectElement(idText){
@@ -242,7 +252,10 @@ function CheckVideoCurrentTime(){
   CheckAndSpeech(timeText);
 }
 
+var WatchYtplayerLoadForCaptionData_TTL = 20;
 function WatchYtplayerLoadForCaptionData() {
+  WatchYtplayerLoadForCaptionData_TTL -= 1;
+  if(WatchYtplayerLoadForCaptionData_TTL < 0) { return; }
   if(Object.keys(captionData).length > 0) { return; }
   UpdateCaptionData();
   setTimeout(WatchYtplayerLoadForCaptionData, 500);

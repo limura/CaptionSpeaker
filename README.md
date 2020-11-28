@@ -38,6 +38,10 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 ## Version 1.4.2
 - 字幕を読み込めなくなっていた問題を修正(2020/11/26)
 
+## Version 1.4.3
+- 字幕を読み込めない場合が残っていた問題を修正(2020/11/28)
+
+
 # 既知の問題
 
 macOS Catalina では標準の話者での発話が失敗することがあるようです。
