@@ -16,6 +16,7 @@ var voiceRate = 1.6;
 var voiceVolume = 1.0;
 var voiceVoice = undefined;
 
+/* // こちらは Manifest V3 対応時に取り出し方を変えるので必要なくなります
 // Youtubeのscript側で設定している ytplayer.config.args.player_response (中身は JSON文字列) を、bodyに<script></script> を埋め込む形で取り出します。
 let INJECT_SCRIPT = `
 (function(){
@@ -30,7 +31,8 @@ let INJECT_SCRIPT = `
   }
 })();
 `;
-
+*/
+/* // こちらは Manifest V3 対応時に取り出し方を変えるので必要なくなります
 function RemoveInjectElement(idText){
   document.getElementById(idText)?.remove();
 }
@@ -43,10 +45,28 @@ function InjectScript(scriptText, idText){
   }
   document.body.appendChild(element);
 }
+*/
+
+// 怪しく var ytInitialPlayerResponse = ... という記述のある script の文字列を拾い出して、そこから ytplayer...player_response の値を抽出します。
+// 元々は ytplayer?.config?.args?.raw_player_response といったあたりに保存されている値を読み出していましたが、content_script側で <script>...</script> を document に突っ込んで取り出す、という荒業をしていて、これは content security policy にひっかかるような行為なわけで、見える形で <script> に埋め込まれているものがあるのなら、という事でこちらから取り出す事にします。しかしこの <script> は以前はなかったと思うんだけれど、そのうちまたなくなったりしないか不安だなぁ。(´・ω・`)
+// なお、この取り出し方はかなーり怪しいので、少しでもフォーマットが書き換わると動かなくなる(元々 JavaScript の source を JSON.parse() しているのでちょっとでもゴミが入ると駄目な)ので、怪しい橋を渡っている感じで凄く怖いです。
+function GetYtInitalPlayerResponse(){
+  const element = document.evaluate("//body/script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
+  //console.log("ytInitialPlayerResponse element:", element, element.textContent);
+  const ytInitialPlayerResponseString = element.textContent.replace(/;var meta =.*/, '').replace(/^var ytInitialPlayerResponse = /,'');
+  try {
+    const ytInitialPlayerResponse = JSON.parse(ytInitialPlayerResponseString);
+    return ytInitialPlayerResponse;
+  }catch(e){
+    console.log("GetYtInitialPlayerResponse decode error:", ytInitialPlayerResponseString);
+  }
+  return undefined;
+}
 
 // ytplayer.config.args.player_response の中に含まれている字幕の情報から
 // 対象のロケールにおける(最適な)字幕データを取得するためのURLを生成します。
 function GetCaptionDataUrl(){
+  /* // こちらは Manifest V3 対応時に取り出し方を変えるので必要なくなります
   let element = document.getElementById(TARGET_ID);
   if(!element){ console.log("can not get element"); return; }
   let player_response = element.getAttribute(PLAYER_RESPONSE_ATTRIBUTE_NAME);
@@ -58,8 +78,9 @@ function GetCaptionDataUrl(){
     console.log("player_response JSON.parse() error:", e);
     return;
   }
-  //console.log("player_response", player_response_obj);
+  //console.log("player_response", player_response_obj);*/
 
+  const player_response_obj = GetYtInitalPlayerResponse();
   // GetCaptionDataUrl() という関数なのに、ここでは怪しく player_response を読み込んでいます。('A`)
   let lengthSeconds = VideoLengthSecondsFromPlayerResponse(player_response_obj);
   if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
@@ -262,9 +283,10 @@ function WatchYtplayerLoadForCaptionData() {
 }
 
 function UpdateCaptionData(){
-  RemoveInjectElement(TARGET_ID);
+  //RemoveInjectElement(TARGET_ID);
   // Youtubeのscriptが設定したデータを読み取るために body に <script> を仕込みます
-  InjectScript(INJECT_SCRIPT, TARGET_ID);
+  //console.log("injecting script:", TARGET_ID);
+  //InjectScript(INJECT_SCRIPT, TARGET_ID);
   // InjectScript() で仕込まれたデータを使って字幕データを fetch します
   FetchCaptionData();
 }

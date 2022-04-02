@@ -1,15 +1,15 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "CaptionSpeaker",
   "default_locale": "en",
   "description": "__MSG_appDescription__",
-  "version": "1.4.3",
+  "version": "2.0.0",
   "icons": {
     "16": "icon/Icon16.png",
     "48": "icon/Icon48.png",
     "128": "icon/Icon128.png"
   },
-  "background": { "scripts": ["background.js"] },
+  "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches":["https://www.youtube.com/watch*"],
@@ -18,9 +18,10 @@
   ],
   "permissions": [
     "storage",
-    "https://www.youtube.com/watch*"
+    "tts"
   ],
-  "page_action": {
+  "host_permissions": ["https://www.youtube.com/watch*"],
+  "action": {
     "default_title": "__MSG_PageActionDefaultTitle__",
     "default_icon": {
       "19": "icon/Icon19.png",

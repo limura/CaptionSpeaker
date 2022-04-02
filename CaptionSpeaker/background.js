@@ -33,9 +33,9 @@ function KickSpeech(tabId, url){
 
 function AssignPageActionIcon(tabId, isEnabled){
   if(isEnabled){
-    chrome.pageAction.setIcon({tabId: tabId, path: {"19": "icon/Icon19.png", "24": "icon/Icon24.png", "32": "icon/Icon32.png"}});
+    chrome.action.setIcon({tabId: tabId, path: {"19": "icon/Icon19.png", "24": "icon/Icon24.png", "32": "icon/Icon32.png"}});
   }else{
-    chrome.pageAction.setIcon({tabId: tabId, path: {"19": "icon/IconDark19.png", "24": "icon/IconDark24.png", "32": "icon/IconDark32.png"}});
+    chrome.action.setIcon({tabId: tabId, path: {"19": "icon/IconDark19.png", "24": "icon/IconDark24.png", "32": "icon/IconDark32.png"}});
   }
 }
 
@@ -48,7 +48,7 @@ function DisableSpeechSetting(tabId){
   chrome.storage.sync.set({"isEnabled": false}, ()=>{chrome.tabs.sendMessage(tabId, {"type": "LoadBooleanSettings"});});
 }
 
-chrome.pageAction.onClicked.addListener((tab)=>{
+chrome.action.onClicked.addListener((tab)=>{
   chrome.storage.sync.get(["isEnabled"], (result)=>{
     let isEnabled = result.isEnabled;
     if(isEnabled){
@@ -60,14 +60,14 @@ chrome.pageAction.onClicked.addListener((tab)=>{
 });
 
 function enableActionButton(tabId){
-  chrome.pageAction.show(tabId);
+  chrome.action.enable(tabId);
   chrome.storage.sync.get(["isEnabled"], (result)=>{
     AssignPageActionIcon(tabId, result.isEnabled);
   });
 }
 
 function disableActionButton(tabId){
-  chrome.pageAction.hide(tabId);
+  chrome.action.disable(tabId);
 }
 
 chrome.tabs.onUpdated.addListener(function(tabId){
@@ -155,4 +155,9 @@ chrome.commands.onCommand.addListener(function(command) {
     break;
   }
 });
- 
+
+chrome.storage.sync.get(["voice"], (data)=>{
+  if(!("voice" in data) || type(data["voice"]) != "string" || data["voice"].length <= 0){
+    chrome.runtime.openOptionsPage();
+  }
+});

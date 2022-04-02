@@ -46,5 +46,14 @@
   },
   "OptionsPageIsDisableSpeechIfChaptionDisabled": {
     "message": "僅在顯示字幕時讀取"
+  },
+  "OptionsPageAnnounceTitle": {
+    "message": "感謝您使用 CaptionSpeaker"
+  },
+  "OptionsPageAnnounceMessage": {
+    "message": "在以下設置中，將揚聲器部分設置為合適的語言和揚聲器，使用“測試”檢查是否可以說話，然後按“保存”保存設置。 如果至少不這樣做，CaptionSpeaker 將不起作用。"
+  },
+  "OptionsPageReleaseNotes": {
+    "message": "2.0.0 版：添加了對 manifest v3 的支持，以遵循 Chrome 擴展規範的變化。 有了這種支持，所有保存的設置都可以被刪除。 因此，請再次在此設置屏幕上進行適當的設置。 在版本 2.* 中，我們試圖不改變與版本 1.* 相比的行為，但由於內部實現發生了顯著變化，它可能會表現不同或變得無法操作。"
   }
 }

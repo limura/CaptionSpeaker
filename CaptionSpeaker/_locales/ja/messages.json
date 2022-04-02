@@ -46,5 +46,14 @@
   },
   "OptionsPageIsDisableSpeechIfChaptionDisabled": {
     "message": "字幕が表示されている時だけ読み上げを行うようにする"
+  },
+  "OptionsPageAnnounceTitle": {
+    "message": "CaptionSpeaker をご利用いただきありがとうございます。"
+  },
+  "OptionsPageAnnounceMessage": {
+    "message": "以下の設定のうち、Speaker の部分を適切な言語と話者に設定の上、「Test」を用いて発話が可能であるかを確認した後、「Save」を押して設定を保存してください。最低限それだけは実行されていませんとCaptionSpeakerは動作しません。"
+  },
+  "OptionsPageReleaseNotes": {
+    "message": "Version 2.0.0: Chrome Extension の仕様変更に追従するため、manifest v3 への対応を行いました。この対応により、保存されている設定が全て消える可能性があります。そのため、今一度この設定画面で適切な設定をしてください。なお、Version 2.* では Version 1.* と比べて動作としては変更がないように努力はしていますが、内部実装が大きく変わっていますため、違う動きをしたり動作できなくなる可能性があります。"
   }
 }
