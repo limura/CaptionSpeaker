@@ -1,34 +1,6 @@
 function isTargetUrl(url){
   if(!url){return false;}
-  return url.indexOf("https://www.youtube.com/watch") != -1;
-}
-
-var status = "stop";
-function StatusStartSpeech(){
-  status = "speech";
-}
-function StatusEndSpeech(){
-  status = "stop";
-}
-
-function RunStartSpeech(tabId, url, kickType){
-  chrome.tabs.sendMessage(tabId, {
-    "type": kickType,
-  });
-  StatusStartSpeech();
-}
-
-function RunStopSpeech(tabId){
-  chrome.tabs.sendMessage(tabId, {"type": "StopSpeech"});
-  StatusEndSpeech();
-}
-
-function KickSpeech(tabId, url){
-  if(status == "speech"){
-    RunStopSpeech(tabId);
-    return;
-  }
-  RunStartSpeech(tabId, url, "KickSpeech");
+  return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
 }
 
 function AssignPageActionIcon(tabId, isEnabled){
@@ -49,6 +21,7 @@ function DisableSpeechSetting(tabId){
 }
 
 chrome.action.onClicked.addListener((tab)=>{
+  console.log("onclicked.");
   chrome.storage.sync.get(["isEnabled"], (result)=>{
     let isEnabled = result.isEnabled;
     if(isEnabled){
@@ -59,25 +32,15 @@ chrome.action.onClicked.addListener((tab)=>{
   });
 });
 
-function enableActionButton(tabId){
-  chrome.action.enable(tabId);
+function updateActionButtonIcon(tabId){
   chrome.storage.sync.get(["isEnabled"], (result)=>{
     AssignPageActionIcon(tabId, result.isEnabled);
   });
 }
 
-function disableActionButton(tabId){
-  chrome.action.disable(tabId);
-}
-
 chrome.tabs.onUpdated.addListener(function(tabId){
   chrome.tabs.get(tabId, function(tab){
-    let url = tab?.url;
-    if(!isTargetUrl(url)){
-      disableActionButton(tabId);
-      return;
-    }
-    enableActionButton(tabId);
+    updateActionButtonIcon(tabId);
   });
 });
 
@@ -95,17 +58,6 @@ function RunInCurrentTab(func){
   });
 }
 
-function StartSpeech(){
-  RunInCurrentTab(function(tab){
-    RunStartSpeech(tab.id, tab.url, "KickSpeech");
-  });
-}
-function StopSpeech(){
-  RunInCurrentTab(function(tab){
-    RunStopSpeech(tab.id);
-  });
-}
-
 function SettingsUpdated(){
   RunInCurrentTab(function(tab){
     chrome.tabs.sendMessage(tab.id, {"type": "SettingsUpdated"});
@@ -115,19 +67,6 @@ function SettingsUpdated(){
 chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse){
     switch(request.type){
-    case "StartSpeech":
-      StatusStartSpeech();
-      break;
-    case "EndSpeech":
-      StatusEndSpeech();
-      break;
-
-    case "RunStartSpeech":
-      StartSpeech();
-      break;
-    case "RunStopSpeech":
-      StopSpeech();
-      break;
     case "SettingsUpdated":
       SettingsUpdated();
       break;
@@ -156,8 +95,9 @@ chrome.commands.onCommand.addListener(function(command) {
   }
 });
 
-chrome.storage.sync.get(["voice"], (data)=>{
-  if(!("voice" in data) || type(data["voice"]) != "string" || data["voice"].length <= 0){
+chrome.storage.sync.get(["rate"], (data)=>{
+  if(!("rate" in data) || typeof(data["rate"]) != "string" || Number(data["rate"]) <= 0 || Number(data["rate"]) > 10){
+    console.log("check", data);
     chrome.runtime.openOptionsPage();
   }
 });
