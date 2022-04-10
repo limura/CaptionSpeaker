@@ -16,71 +16,74 @@ var voiceRate = 1.6;
 var voiceVolume = 1.0;
 var voiceVoice = undefined;
 
-/* // こちらは Manifest V3 対応時に取り出し方を変えるので必要なくなります
-// Youtubeのscript側で設定している ytplayer.config.args.player_response (中身は JSON文字列) を、bodyに<script></script> を埋め込む形で取り出します。
-let INJECT_SCRIPT = `
-(function(){
-  let raw_player_response = ytplayer?.config?.args?.raw_player_response;
-  let player_response = ytplayer?.config?.args?.player_response;
-  if(player_response){
-    document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", player_response);
-    return;
+function GetVideoId(){
+  const videoIDMatched = window?.location?.href?.match(/\/watch\?v=(.*)/);
+  if(videoIDMatched && videoIDMatched.length > 0){
+    return videoIDMatched[1];
   }
-  if(raw_player_response){
-    document.getElementById("${TARGET_ID}").setAttribute("${PLAYER_RESPONSE_ATTRIBUTE_NAME}", JSON.stringify(raw_player_response))
+  const embedIDMatched = window?.location?.href?.match(/\/embed\/(.*)/);
+  if(embedIDMatched && embedIDMatched.length > 0){
+    return embedIDMatched[1];
   }
-})();
-`;
-*/
-/* // こちらは Manifest V3 対応時に取り出し方を変えるので必要なくなります
-function RemoveInjectElement(idText){
-  document.getElementById(idText)?.remove();
+  return undefined;
 }
 
-function InjectScript(scriptText, idText){
-  let element = document.createElement('script');
-  element.textContent = scriptText;
-  if(idText){
-    element.id = idText;
-  }
-  document.body.appendChild(element);
-}
+/*
+ytConfig(?) から
+怪しく https://www.youtube.com/youtubei/v1/player?key=...8&prettyPrint=false
+にPOSTで送り込むためのデータを生成します。
 */
+function GenerateYoutbeiV1PlayerPostPayload(ytConfig){
+  const context = ytConfig?.INNERTUBE_CONTEXT;
+  const videoId = GetVideoId();
+  const payloadObj = {
+    "context": context,
+    "videoId": videoId
+  };
 
-// 怪しく var ytInitialPlayerResponse = ... という記述のある script の文字列を拾い出して、そこから ytplayer...player_response の値を抽出します。
-// 元々は ytplayer?.config?.args?.raw_player_response といったあたりに保存されている値を読み出していましたが、content_script側で <script>...</script> を document に突っ込んで取り出す、という荒業をしていて、これは content security policy にひっかかるような行為なわけで、見える形で <script> に埋め込まれているものがあるのなら、という事でこちらから取り出す事にします。しかしこの <script> は以前はなかったと思うんだけれど、そのうちまたなくなったりしないか不安だなぁ。(´・ω・`)
-// なお、この取り出し方はかなーり怪しいので、少しでもフォーマットが書き換わると動かなくなる(元々 JavaScript の source を JSON.parse() しているのでちょっとでもゴミが入ると駄目な)ので、怪しい橋を渡っている感じで凄く怖いです。
-function GetYtInitalPlayerResponse(){
-  const element = document.evaluate("//body/script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
-  //console.log("ytInitialPlayerResponse element:", element, element.textContent);
-  const ytInitialPlayerResponseString = element.textContent.replace(/;var meta =.*/, '').replace(/^var ytInitialPlayerResponse = /,'');
+  //console.log("GenerateYoutbeiV1PlayerPostPayload generate", payloadObj);
+  return JSON.stringify(payloadObj);
+}
+
+// 怪しく INNERETUBE_API_KEY が書かれている辺りをHTMLから取り出して
+// https://www.youtube.com/youtubei/v1/player? を叩いて
+// それらしい初期データを取り出します。
+async function GetYoutbeiV1PlayerData(){
+  // TODO: これはかなり怪しく「ソレ」を取り出しているのでちょっとでもフォーマットが変わると誤動作するはずです。
+  // 具体的には "ytcfg.set({" ではじまって ");window.ytcfg.obfscatedData_" に続く
+  // までの間の物が「ソレ」だと仮定しているので、目的の ytcfg.set の直後に
+  // ytcfg.obfuscatedData_ を書いていてくれないと動きません。
+  // これは完全に youtube の人がどうそれを JavaScript コードに落とし込んでいるかに依存しているため、
+  // 正直言って全然、全く、完膚なきまでに、よろしくありません。
+  const ytCfgJSON = document.evaluate("//script[@nonce and contains(text(),'INNERTUBE_API_KEY')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0).innerText.replace(/^[\s\S]*ytcfg\.set\({/g,'{').replace(/}\);\s*window\.ytcfg\.obfuscatedData_[\s\S]*/,'}');
+  if(typeof ytCfgJSON != "string" || ytCfgJSON.length <= 0){
+    console.log("ERROR: ytcfg.set({\"CLIENT_CANARY_STATE... not found");
+    return undefined;
+  }
   try {
-    const ytInitialPlayerResponse = JSON.parse(ytInitialPlayerResponseString);
-    return ytInitialPlayerResponse;
-  }catch(e){
-    console.log("GetYtInitialPlayerResponse decode error:", ytInitialPlayerResponseString);
+    const ytConfig = JSON.parse(ytCfgJSON);
+    const key = ytConfig?.INNERTUBE_API_KEY;
+    const payload = GenerateYoutbeiV1PlayerPostPayload(ytConfig);
+    const targetUrl = `https://www.youtube.com/youtubei/v1/player?key=${key}&prettyPrint=false`;
+    const res = await fetch(targetUrl, {
+      method: "POST",
+      body: payload,
+      headers: {
+        "content-type": "application/json"
+      }
+    });
+    const resData = await res.json();
+    return resData;
+  }catch(err){
+    console.log("GetYoutbeiV1PlayerData got error", err, ytCfgJSON);
   }
   return undefined;
 }
 
 // ytplayer.config.args.player_response の中に含まれている字幕の情報から
 // 対象のロケールにおける(最適な)字幕データを取得するためのURLを生成します。
-function GetCaptionDataUrl(){
-  /* // こちらは Manifest V3 対応時に取り出し方を変えるので必要なくなります
-  let element = document.getElementById(TARGET_ID);
-  if(!element){ console.log("can not get element"); return; }
-  let player_response = element.getAttribute(PLAYER_RESPONSE_ATTRIBUTE_NAME);
-  if(!player_response){ console.log("can not get player_response", element); return; }
-  var player_response_obj;
-  try {
-    player_response_obj = JSON.parse(player_response);
-  }catch(e){
-    console.log("player_response JSON.parse() error:", e);
-    return;
-  }
-  //console.log("player_response", player_response_obj);*/
-
-  const player_response_obj = GetYtInitalPlayerResponse();
+async function GetCaptionDataUrl(){
+  const player_response_obj = await GetYoutbeiV1PlayerData();
   // GetCaptionDataUrl() という関数なのに、ここでは怪しく player_response を読み込んでいます。('A`)
   let lengthSeconds = VideoLengthSecondsFromPlayerResponse(player_response_obj);
   if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
@@ -102,18 +105,24 @@ function GetCaptionDataUrl(){
   return origUrl + "&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=" + playLocale;
 }
 
-function FetchCaptionData(){
-  let url = GetCaptionDataUrl();
-  fetch(url)
-  .then((response)=>{
-    return response?.json();
-  }).then((json)=>{
-    if(!json){return;}
-    if(guessedOriginalCaptionLanguage == playLocale && isDisableSpeechIfSameLocaleVideo){return;}
-    console.log("FetchCaptionData() pass isDisableSpeechIfSameLocaleVideo check", isDisableSpeechIfSameLocaleVideo, guessedOriginalCaptionLanguage, playLocale);
+var CURRENT_VIDEO_ID = "invalid video id!";
+async function FetchCaptionData(){
+  try {
+    const videoId = GetVideoId();
+    if(videoId == CURRENT_VIDEO_ID){return undefined;}
+    CURRENT_VIDEO_ID = videoId;
+    const url = await GetCaptionDataUrl();
+    if(!url){return undefined;}
+    const response = await fetch(url);
+    if(!response){return undefined;}
+    const json = await response.json();
+    if(!json){return undefined;}
+    if(guessedOriginalCaptionLanguage == playLocale && isDisableSpeechIfSameLocaleVideo){return undefined;}
     captionData = CaptionDataToTimeDict(json);
-    console.log("captionData update:", captionData);
-  }).catch(err=>{console.log("Fetch got error:", err);});
+    //console.log("captionData updated", captionData);
+  }catch(err){
+    console.log("FetchCaptionData got error:", err, window.location.href);
+  }
 }
 
 function FormatTimeFromMillisecond(millisecond){
@@ -227,7 +236,7 @@ function AddSpeechQueue(text){
   utt.volume = voiceVolume;
   utt.onerror = function(event){console.log("SpeechSynthesisUtterance Event onError", event);};
   if(isStopIfNewSpeech){
-    console.log("isStopIfNewSpeech is true");
+    //console.log("isStopIfNewSpeech is true");
     speechSynthesis.cancel();
   }
   speechSynthesis.speak(utt);
@@ -261,33 +270,36 @@ function IsValidVideoDuration(duration, captionData){
   return duration >= maxMillisecond / 1000;
 }
 
+function IsTargetUrl(){
+  const url = location.href;
+  return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
+}
+
+var prevCheckVideoTimeText = "";
 // 再生位置を video object の .currentTime から取得します
 function CheckVideoCurrentTime(){
+  //console.log("CaptionSpeaker checking location", location.href);
+  if(!IsTargetUrl()){return;}
   if(!isEnabled){return;}
   let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
-  if(!videoElement){return;}
+  if(!videoElement){
+    console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
+    return;
+  }
   let currentTime = videoElement.currentTime;
   let duration = videoElement.duration;
-  if(!IsValidVideoDuration(duration, captionData)){return;}
+  if(isNaN(duration)){return;}
+  if(!IsValidVideoDuration(duration, captionData)){
+    console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
+    return;
+  }
   let timeText = FormatTimeFromMillisecond(currentTime * 1000);
+  if(prevCheckVideoTimeText == timeText){return;}
+  prevCheckVideoTimeText = timeText;
   CheckAndSpeech(timeText);
 }
 
-var WatchYtplayerLoadForCaptionData_TTL = 20;
-function WatchYtplayerLoadForCaptionData() {
-  WatchYtplayerLoadForCaptionData_TTL -= 1;
-  if(WatchYtplayerLoadForCaptionData_TTL < 0) { return; }
-  if(Object.keys(captionData).length > 0) { return; }
-  UpdateCaptionData();
-  setTimeout(WatchYtplayerLoadForCaptionData, 500);
-}
-
 function UpdateCaptionData(){
-  //RemoveInjectElement(TARGET_ID);
-  // Youtubeのscriptが設定したデータを読み取るために body に <script> を仕込みます
-  //console.log("injecting script:", TARGET_ID);
-  //InjectScript(INJECT_SCRIPT, TARGET_ID);
-  // InjectScript() で仕込まれたデータを使って字幕データを fetch します
   FetchCaptionData();
 }
 
@@ -349,8 +361,63 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
-LoadBooleanSettings();
-LoadVoiceSettings();
-WatchYtplayerLoadForCaptionData();
-// ビデオの再生位置を 0.25秒間隔 で確認するようにします
-setInterval(CheckVideoCurrentTime, 250);
+var ToplevelObserver = undefined;
+var VideoTimeCheckTimerID = undefined;
+
+function StartVideoTimeChecker(){
+  CheckVideoCurrentTime();
+  setTimeout(StartVideoTimeChecker, 250);
+}
+function StopVideoTimeChecker(){
+  if(VideoTimeCheckTimerID){
+    clearTimeout(VideoTimeCheckTimerID);
+    VideoTimeCheckTimerID = undefined;
+  }
+}
+
+// https://www.youtube.com/ の時に仕掛ける mutation observer.
+// Youtube は /channel/ から動画をクリックして /watch?v=... に遷移した時に
+// URLを移動したという感じのイベントが発生しないぽくて、
+// ChromeExtension で "https://www.youtube.com/watch?" を対象にした
+// contentScript が発火しないため、
+// "https://www.youtube.com/" の場合に document.body に対して mutation observer を仕掛け、
+// その document.body の childList を見張ってページ書き換えを検知するようにします。
+function StartToplevelObserver(){
+  if(ToplevelObserver){
+    ToplevelObserver.disconnect();
+    ToplevelObserver = undefined;
+  }
+  ToplevelObserver = new MutationObserver((mutationList, observer) => {
+    //console.log("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
+    if(IsTargetUrl()){
+      // UpdateCaptionData は /watch?v=... の ... が変わった時だけで良いはず
+      UpdateCaptionData();
+      StartVideoTimeChecker();
+    }else{
+      StopVideoTimeChecker();
+    }
+  });
+  const toplevel = document.body;
+  ToplevelObserver.observe(toplevel, {
+    childList: true,
+    subtree: false
+  });
+}
+
+function StartDomChangeWatcher(){
+  StartToplevelObserver();
+}
+
+// とりあえず Youtube のURLにだけ反応するようにします。
+// これをやっておかないと "<all_urls>" を対象にしている時に
+// 必要の無いURLでも動き始めてしまう事になります。
+if(location.href.indexOf("https://www.youtube.com/") == 0){
+  LoadBooleanSettings();
+  LoadVoiceSettings();
+  //UpdateCaptionData(); // ← 最初の一発目は watcher が走らせてくれるはずなので、この時点では必要ないため、コメントアウトしておきます
+  StartDomChangeWatcher();
+  window.addEventListener('popstate',(ev) =>{
+    console.log("popstate?", ev, location.href);
+  });
+}
+

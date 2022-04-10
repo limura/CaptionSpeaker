@@ -12,15 +12,14 @@
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
-      "matches":["https://www.youtube.com/watch*"],
-      "js": ["contentScript.js"]
+      "matches":["<all_urls>"],
+      "js": ["contentScript.js"],
+      "all_frames": true
     }
   ],
   "permissions": [
-    "storage",
-    "tts"
+    "storage"
   ],
-  "host_permissions": ["https://www.youtube.com/watch*"],
   "action": {
     "default_title": "__MSG_PageActionDefaultTitle__",
     "default_icon": {
@@ -30,7 +29,8 @@
     }
   },
   "options_ui": {
-    "page": "options.html"
+    "page": "options.html",
+    "open_in_tab": true
   },
   "commands": {
     "enableEvent": {
