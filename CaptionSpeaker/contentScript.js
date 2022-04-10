@@ -1,6 +1,4 @@
 let speechSynthesis = window.speechSynthesis;
-let TARGET_ID = "CaptionSpeakerData";
-let PLAYER_RESPONSE_ATTRIBUTE_NAME = "ytplayer.config.args.raw_player_response";
 var prevSpeakTime = "";
 var playLocale = window.navigator.language;
 var captionData = {};
@@ -10,6 +8,8 @@ var isDisableSpeechIfSameLocaleVideo = false;
 var isDisableSpeechIfChaptionDisabled = false;
 var videoLengthSeconds = -1;
 var guessedOriginalCaptionLanguage = undefined;
+var CURRENT_VIDEO_ID = "invalid video id!";
+var prevCheckVideoTimeText = "";
 
 var voicePitch = 1.0;
 var voiceRate = 1.6;
@@ -105,7 +105,6 @@ async function GetCaptionDataUrl(){
   return origUrl + "&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=" + playLocale;
 }
 
-var CURRENT_VIDEO_ID = "invalid video id!";
 async function FetchCaptionData(){
   try {
     const videoId = GetVideoId();
@@ -275,7 +274,6 @@ function IsTargetUrl(){
   return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
 }
 
-var prevCheckVideoTimeText = "";
 // 再生位置を video object の .currentTime から取得します
 function CheckVideoCurrentTime(){
   //console.log("CaptionSpeaker checking location", location.href);
@@ -329,25 +327,10 @@ function LoadBooleanSettings(){
     }
   });
 }
-function UpdateIsEnabled(isEnabled){
-  chrome.storage.sync.set({"isEnabled": isEnabled});
-}
-
 chrome.runtime.onMessage.addListener(
   function(message, sender, sendResponse){
     //console.log("onMessage", message, sender, sendResponse);
     switch(message.type){
-    case "KickSpeech":
-      isEnabled = true;
-      UpdateIsEnabled(isEnabled);
-      LoadVoiceSettings();
-      UpdateCaptionData();
-      break;
-    case "StopSpeech":
-      isEnabled = false;
-      UpdateIsEnabled(isEnabled);
-      speechSynthesis.cancel();
-      break;
     case "SettingsUpdated":
       LoadBooleanSettings();
       LoadVoiceSettings();
