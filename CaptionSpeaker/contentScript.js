@@ -17,7 +17,7 @@ var voiceVolume = 1.0;
 var voiceVoice = undefined;
 
 function GetVideoId(){
-  const videoIDMatched = window?.location?.href?.match(/\/watch\?v=(.*)/);
+  const videoIDMatched = window?.location?.href?.match(/\/watch\?v=([^&]*)/);
   if(videoIDMatched && videoIDMatched.length > 0){
     return videoIDMatched[1];
   }
@@ -119,7 +119,7 @@ async function FetchCaptionData(){
     if(!json){return undefined;}
     if(guessedOriginalCaptionLanguage == playLocale && isDisableSpeechIfSameLocaleVideo){return undefined;}
     captionData = CaptionDataToTimeDict(json);
-    //console.log("captionData updated", captionData);
+    console.log("captionData updated", captionData);
   }catch(err){
     console.log("FetchCaptionData got error:", err, window.location.href);
   }
@@ -291,6 +291,7 @@ function CheckVideoCurrentTime(){
   if(isNaN(duration)){return;}
   if(!IsValidVideoDuration(duration, captionData)){
     console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
+    UpdateCaptionData();
     return;
   }
   let timeText = FormatTimeFromMillisecond(currentTime * 1000);
@@ -382,7 +383,7 @@ function StopVideoTimeChecker(){
 // contentScript が発火しないため、
 // "https://www.youtube.com/" の場合に document.body に対して mutation observer を仕掛け、
 // その document.body の childList を見張ってページ書き換えを検知するようにします。
-function StartToplevelObserver(){
+function KickToplevelObserver(){
   if(ToplevelObserver){
     ToplevelObserver.disconnect();
     ToplevelObserver = undefined;
@@ -404,10 +405,6 @@ function StartToplevelObserver(){
   });
 }
 
-function StartDomChangeWatcher(){
-  StartToplevelObserver();
-}
-
 // とりあえず Youtube のURLにだけ反応するようにします。
 // これをやっておかないと "<all_urls>" を対象にしている時に
 // 必要の無いURLでも動き始めてしまう事になります。
@@ -415,9 +412,6 @@ if(location.href.indexOf("https://www.youtube.com/") == 0){
   LoadBooleanSettings();
   LoadVoiceSettings();
   //UpdateCaptionData(); // ← 最初の一発目は watcher が走らせてくれるはずなので、この時点では必要ないため、コメントアウトしておきます
-  StartDomChangeWatcher();
-  window.addEventListener('popstate',(ev) =>{
-    console.log("popstate?", ev, location.href);
-  });
+  KickToplevelObserver();
 }
 
