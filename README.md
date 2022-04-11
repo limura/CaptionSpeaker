@@ -41,7 +41,7 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 ## Version 1.4.3
 - 字幕を読み込めない場合が残っていた問題を修正(2020/11/28)
 
-## Version 2.0.0
+## Version 2.0.0 (2022/04)
 - Manifest V3 に対応させた
 - チャンネル(www.youtube.com/channel/...)やプレイリスト(www.youtube.com/playlist?list=...)から動画のページに遷移した時に発話しない問題を解消
 - www.youtube.com以外のページへの埋込 youtube動画(iframe で www.youtube.com/embed... が取り込まれるタイプのもの)に対応
