@@ -110,7 +110,10 @@ function getIsDisableSpeechIfChaptionDisabled(){
 }
 
 function getTestText(){
-  let text = document.getElementById("testText").value;
+  var text = document.getElementById("testText").value;
+  if(!text){
+    text = chrome.i18n.getMessage("OptionsPageSampleTextValue");
+  }
   if(!text){
     return "メロスは激怒した。必ず、かのじゃちぼうぎゃくの王を除かなければならぬと決意した。";
   }
