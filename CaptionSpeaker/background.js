@@ -32,10 +32,8 @@ function updateActionButtonIcon(tabId){
   });
 }
 
-chrome.tabs.onUpdated.addListener(function(tabId){
-  chrome.tabs.get(tabId, function(tab){
-    updateActionButtonIcon(tabId);
-  });
+chrome.tabs.onActivated.addListener((info)=>{
+  updateActionButtonIcon(info.tabId);
 });
 
 function RunInCurrentTab(func){
