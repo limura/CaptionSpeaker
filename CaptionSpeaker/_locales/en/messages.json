@@ -54,6 +54,6 @@
     "message": "Of the following settings, set the Speaker part to the appropriate language and speaker, use \"Test\" to check if you can speak, and then press \"Save\" to save the settings. CaptionSpeaker will not work if at least that is not done."
   },
   "OptionsPageReleaseNotes": {
-    "message": "Version 2.0.0: Added support for manifest v3 to follow changes in Chrome Extension specifications. With this support, all saved settings may be erased. Therefore, please make the appropriate settings on this setting screen once again. In Version 2.*, we are trying not to change the behavior compared to Version 1.*, but since the internal implementation has changed significantly, it may behave differently or become inoperable."
+    "message": "Version 2.0.0: The range of support has been expanded to youtube videos embedded in other sites. In addition, in order to follow the specification change of Chrome Extension, we have made support for manifest v3. With this support, all saved settings may be erased. Therefore, please make the appropriate settings on this setting screen once again. In Version 2. *, we are trying not to change the behavior compared to Version 1. *, but since the internal implementation has changed significantly, it may behave differently or become inoperable."
   }
 }
