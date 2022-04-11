@@ -304,9 +304,10 @@ function UpdateCaptionData(){
 
 function LoadBooleanSettings(){
   chrome.storage.sync.get(["isEnabled", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled"], (result)=>{
-    if(result?.isEnabled){
+    if(result?.isEnabled || typeof result?.isEnabled == "undefined"){
       isEnabled = true;
     }else{
+      console.log("isEnabled == false:", result?.isEnabled, result);
       isEnabled = false;
       speechSynthesis.cancel();
     }

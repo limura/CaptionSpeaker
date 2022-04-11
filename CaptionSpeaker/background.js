@@ -1,5 +1,5 @@
 function AssignPageActionIcon(tabId, isEnabled){
-  if(isEnabled){
+  if(isEnabled || typeof isEnabled == "undefined"){
     chrome.action.setIcon({tabId: tabId, path: {"19": "icon/Icon19.png", "24": "icon/Icon24.png", "32": "icon/Icon32.png"}});
   }else{
     chrome.action.setIcon({tabId: tabId, path: {"19": "icon/IconDark19.png", "24": "icon/IconDark24.png", "32": "icon/IconDark32.png"}});
