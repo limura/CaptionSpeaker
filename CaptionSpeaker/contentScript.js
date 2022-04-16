@@ -2,26 +2,25 @@ let speechSynthesis = window.speechSynthesis;
 var prevSpeakTime = "";
 var playLocale = window.navigator.language;
 var captionData = {};
-var isEnabled = false;
-var isStopIfNewSpeech = false;
-var isDisableSpeechIfSameLocaleVideo = false;
-var isDisableSpeechIfChaptionDisabled = false;
 var videoLengthSeconds = -1;
 var guessedOriginalCaptionLanguage = undefined;
 var CURRENT_VIDEO_ID = "invalid video id!";
 var prevCheckVideoTimeText = "";
 
-var voicePitch = 1.0;
-var voiceRate = 1.6;
-var voiceVolume = 1.0;
-var voiceVoice = undefined;
+var ContentScriptLoadTime = new Date();
+
+function getStorageSync(keys = null){
+  return new Promise(resolve => {
+    chrome.storage.sync.get(keys, resolve);
+  });
+}
 
 function GetVideoId(){
   const videoIDMatched = window?.location?.href?.match(/\/watch\?v=([^&]*)/);
   if(videoIDMatched && videoIDMatched.length > 0){
     return videoIDMatched[1];
   }
-  const embedIDMatched = window?.location?.href?.match(/\/embed\/(.*)/);
+  const embedIDMatched = window?.location?.href?.match(/\/embed\/([^?]*)/);
   if(embedIDMatched && embedIDMatched.length > 0){
     return embedIDMatched[1];
   }
@@ -105,22 +104,37 @@ async function GetCaptionDataUrl(){
   return origUrl + "&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=" + playLocale;
 }
 
+var isCaptionDataFetching = false;
 async function FetchCaptionData(){
   try {
+    if(isCaptionDataFetching){return undefined;}
+    isCaptionDataFetching = true;
+    console.log("FetchCaptionData start");
     const videoId = GetVideoId();
-    if(videoId == CURRENT_VIDEO_ID){return undefined;}
-    CURRENT_VIDEO_ID = videoId;
+    if(videoId == CURRENT_VIDEO_ID){isCaptionDataFetching = false;return undefined;}
     const url = await GetCaptionDataUrl();
-    if(!url){return undefined;}
+    if(!url){isCaptionDataFetching = false;return undefined;}
     const response = await fetch(url);
-    if(!response){return undefined;}
+    if(!response){isCaptionDataFetching = false;return undefined;}
     const json = await response.json();
-    if(!json){return undefined;}
-    if(guessedOriginalCaptionLanguage == playLocale && isDisableSpeechIfSameLocaleVideo){return undefined;}
+    if(!json){isCaptionDataFetching = false;return undefined;}
+    const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo"]);
+    if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){isCaptionDataFetching = false;return undefined;}
     captionData = CaptionDataToTimeDict(json);
-    console.log("captionData updated", captionData);
+    CURRENT_VIDEO_ID = videoId;
+    console.log("captionData updated", GetVideoId(), captionData);
+    // 最初の一回目のCaptionDataの読み込み時には、読み込みが終わるまでの時間分を考慮させます
+    if(ContentScriptLoadTime){
+      const now = new Date();
+      const delay = (now.getTime() - ContentScriptLoadTime.getTime()) / 1000.0;
+      ContentScriptLoadTime = undefined;
+      console.log("delay:", delay);
+      CheckVideoCurrentTime(delay);
+    }
+    isCaptionDataFetching = false;
   }catch(err){
     console.log("FetchCaptionData got error:", err, window.location.href);
+    isCaptionDataFetching = false;
   }
 }
 
@@ -198,43 +212,59 @@ function UpdatePlayLocale(locale){
   }
 }
 
-function LoadVoiceSettings(){
-  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume"], (result)=>{
-    let lang = result.lang;
-    let voiceName = result.voice;
-    let voiceList = speechSynthesis.getVoices();
-    for(voice of voiceList){
-      if(voice.lang == lang && voice.name == voiceName){
-        voiceVoice = voice;
-        UpdatePlayLocale(lang);
-      }
+function StorageResultToVoiceSettings(result){
+  let lang = result.lang;
+  let voiceName = result.voice;
+  let voiceList = speechSynthesis.getVoices();
+  var isStopIfNewSpeech = false;
+  var voicePitch = 1.0;
+  var voiceRate = 1.6;
+  var voiceVolume = 1.0;
+  var voiceVoice = undefined;
+  for(voice of voiceList){
+    if(voice.lang == lang && voice.name == voiceName){
+      voiceVoice = voice;
+      UpdatePlayLocale(lang);
     }
-    let pitch = result.pitch;
-    if(pitch){
-      voicePitch = pitch;
-    }
-    let rate = result.rate;
-    if(rate){
-      voiceRate = rate;
-    }
-    let volume = result.volume;
-    if(volume){
-      voiceVolume = volume;
-    }
-  });
+  }
+  let pitch = result.pitch;
+  if(pitch){
+    voicePitch = pitch;
+  }
+  let rate = result.rate;
+  if(rate){
+    voiceRate = rate;
+  }
+  let volume = result.volume;
+  if(volume){
+    voiceVolume = volume;
+  }
+  if(result?.isStopIfNewSpeech){
+    isStopIfNewSpeech = true;
+  }else{
+    isStopIfNewSpeech = false;
+  }
+  return {
+    voicePitch: voicePitch,
+    voiceRate: voiceRate,
+    voiceVolume: voiceVolume,
+    voiceVoice: voiceVoice,
+    isStopIfNewSpeech: isStopIfNewSpeech,
+  };
 }
 
-function AddSpeechQueue(text){
-  let utt = new SpeechSynthesisUtterance(text);
-  if(voiceVoice){
-    utt.voice = voiceVoice;
+function AddSpeechQueue(text, storageResult){
+  const utt = new SpeechSynthesisUtterance(text);
+  const setting = StorageResultToVoiceSettings(storageResult);
+  if(setting.voiceVoice){
+    utt.voice = setting.voiceVoice;
     utt.lang = utt.voice.lang;
   }
-  utt.pitch = voicePitch;
-  utt.rate = voiceRate;
-  utt.volume = voiceVolume;
+  utt.pitch = setting.voicePitch;
+  utt.rate = setting.voiceRate;
+  utt.volume = setting.voiceVolume;
   utt.onerror = function(event){console.log("SpeechSynthesisUtterance Event onError", event);};
-  if(isStopIfNewSpeech){
+  if(setting.isStopIfNewSpeech){
     //console.log("isStopIfNewSpeech is true");
     speechSynthesis.cancel();
   }
@@ -242,14 +272,14 @@ function AddSpeechQueue(text){
 }
 
 // 単純に秒単位で時間を確認して、前回読み上げた時間と変わっているのなら発話する、という事をします。
-function CheckAndSpeech(currentTimeText){
+function CheckAndSpeech(currentTimeText, storageResult){
   if(!currentTimeText){ console.log("currentTimeText is nil"); return;}
   if(currentTimeText == prevSpeakTime){ return;}
-  if(isDisableSpeechIfChaptionDisabled && !CheckCaptionIsDisplaying()){ return; }
+  if(storageResult.isDisableSpeechIfChaptionDisabled && !CheckCaptionIsDisplaying()){ return; }
   let caption = captionData[currentTimeText];
   if(caption){
     prevSpeakTime = currentTimeText;
-    AddSpeechQueue(caption.segment);
+    AddSpeechQueue(caption.segment, storageResult);
     return;
   }
   //console.log("no caption:", currentTimeText);
@@ -274,10 +304,12 @@ function IsTargetUrl(){
   return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
 }
 
-// 再生位置を video object の .currentTime から取得します
-function CheckVideoCurrentTime(){
+// 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
+async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   //console.log("CaptionSpeaker checking location", location.href);
   if(!IsTargetUrl()){return;}
+  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech"]);
+  const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
   if(!isEnabled){return;}
   let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
   if(!videoElement){
@@ -292,41 +324,24 @@ function CheckVideoCurrentTime(){
     UpdateCaptionData();
     return;
   }
-  let timeText = FormatTimeFromMillisecond(currentTime * 1000);
-  if(prevCheckVideoTimeText == timeText){return;}
-  prevCheckVideoTimeText = timeText;
-  CheckAndSpeech(timeText);
+  for(let gap = loadGapSecond; gap >= 0; gap-=1){
+    let timeText = FormatTimeFromMillisecond((currentTime - gap) * 1000);
+    if(prevCheckVideoTimeText == timeText){return;}
+    prevCheckVideoTimeText = timeText;
+    CheckAndSpeech(timeText, storageResult);
+  }
 }
 
 function UpdateCaptionData(){
   FetchCaptionData();
 }
 
-function LoadBooleanSettings(){
-  chrome.storage.sync.get(["isEnabled", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled"], (result)=>{
-    if(result?.isEnabled || typeof result?.isEnabled == "undefined"){
-      isEnabled = true;
-    }else{
-      console.log("isEnabled == false:", result?.isEnabled, result);
-      isEnabled = false;
-      speechSynthesis.cancel();
-    }
-    if(result?.isStopIfNewSpeech){
-      isStopIfNewSpeech = true;
-    }else{
-      isStopIfNewSpeech = false;
-    }
-    if(result?.isDisableSpeechIfSameLocaleVideo){
-      isDisableSpeechIfSameLocaleVideo = true;
-    }else{
-      isDisableSpeechIfSameLocaleVideo = false;
-    }
-    if(result?.isDisableSpeechIfChaptionDisabled){
-      isDisableSpeechIfChaptionDisabled = true;
-    }else{
-      isDisableSpeechIfChaptionDisabled = false;
-    }
-  });
+async function LoadBooleanSettings(){
+  const storageResult = await getStorageSync(["isEnabled"]);
+  const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
+  if(!isEnabled){
+    speechSynthesis.cancel();
+  }
 }
 chrome.runtime.onMessage.addListener(
   function(message, sender, sendResponse){
@@ -334,7 +349,6 @@ chrome.runtime.onMessage.addListener(
     switch(message.type){
     case "SettingsUpdated":
       LoadBooleanSettings();
-      LoadVoiceSettings();
       UpdateCaptionData();
       break;
     case "LoadBooleanSettings":
@@ -350,8 +364,10 @@ var ToplevelObserver = undefined;
 var VideoTimeCheckTimerID = undefined;
 
 function StartVideoTimeChecker(){
-  CheckVideoCurrentTime();
-  setTimeout(StartVideoTimeChecker, 250);
+  if(CURRENT_VIDEO_ID == GetVideoId()){
+    CheckVideoCurrentTime();
+  }
+  VideoTimeCheckTimerID = setTimeout(StartVideoTimeChecker, 250);
 }
 function StopVideoTimeChecker(){
   if(VideoTimeCheckTimerID){
@@ -367,15 +383,19 @@ function StopVideoTimeChecker(){
 // contentScript が発火しないため、
 // "https://www.youtube.com/" の場合に document.body に対して mutation observer を仕掛け、
 // その document.body の childList を見張ってページ書き換えを検知するようにします。
-function KickToplevelObserver(){
+async function KickToplevelObserver(){
   if(ToplevelObserver){
     ToplevelObserver.disconnect();
     ToplevelObserver = undefined;
   }
   ToplevelObserver = new MutationObserver((mutationList, observer) => {
     //console.log("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
+    const videoId = GetVideoId();
     if(IsTargetUrl()){
+      if(videoId == CURRENT_VIDEO_ID){return;}
       // UpdateCaptionData は /watch?v=... の ... が変わった時だけで良いはず
+      ContentScriptLoadTime = new Date(); // ページが変わったぽいので load time を解消しておきます
+      console.log("toplevel changed. calling UpdateCaptionData()");
       UpdateCaptionData();
       StartVideoTimeChecker();
     }else{
@@ -385,7 +405,7 @@ function KickToplevelObserver(){
   const toplevel = document.body;
   ToplevelObserver.observe(toplevel, {
     childList: true,
-    subtree: false
+    subtree: true,
   });
 }
 
@@ -394,7 +414,6 @@ function KickToplevelObserver(){
 // 必要の無いURLでも動き始めてしまう事になります。
 if(location.href.indexOf("https://www.youtube.com/") == 0){
   LoadBooleanSettings();
-  LoadVoiceSettings();
   //UpdateCaptionData(); // ← 最初の一発目は watcher が走らせてくれるはずなので、この時点では必要ないため、コメントアウトしておきます
   KickToplevelObserver();
 }
