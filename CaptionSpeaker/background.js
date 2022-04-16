@@ -65,6 +65,7 @@ chrome.runtime.onMessage.addListener(
     default:
       break;
     }
+    sendResponse();
   }
 );
 
@@ -90,7 +91,6 @@ chrome.commands.onCommand.addListener(function(command) {
 // Version 1.* の頃のデータが Version 2.* で manifest v3 に変わったことで読み込めなくなっている場合があるのでそういう感じの物を検知したり、クリーンインストールした時とかには設定ページを強制的に開くようにします。
 chrome.storage.sync.get(["rate"], (data)=>{
   if(!("rate" in data) || typeof(data["rate"]) != "string" || Number(data["rate"]) <= 0 || Number(data["rate"]) > 10){
-    console.log("check", data);
     chrome.runtime.openOptionsPage();
   }
 });
