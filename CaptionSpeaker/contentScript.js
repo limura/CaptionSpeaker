@@ -105,13 +105,13 @@ async function GetCaptionDataUrl(){
 }
 
 var isCaptionDataFetching = false;
-async function FetchCaptionData(){
+async function FetchCaptionData(isForceFetch = false){
   try {
     if(isCaptionDataFetching){return undefined;}
     isCaptionDataFetching = true;
     console.log("FetchCaptionData start");
     const videoId = GetVideoId();
-    if(videoId == CURRENT_VIDEO_ID){isCaptionDataFetching = false;return undefined;}
+    if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
     const url = await GetCaptionDataUrl();
     if(!url){isCaptionDataFetching = false;return undefined;}
     const response = await fetch(url);
@@ -119,7 +119,11 @@ async function FetchCaptionData(){
     const json = await response.json();
     if(!json){isCaptionDataFetching = false;return undefined;}
     const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo"]);
-    if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){isCaptionDataFetching = false;return undefined;}
+    if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
+      captionData = {};
+      isCaptionDataFetching = false;
+      return undefined;
+    }
     captionData = CaptionDataToTimeDict(json);
     CURRENT_VIDEO_ID = videoId;
     console.log("captionData updated", GetVideoId(), captionData);
@@ -418,3 +422,14 @@ if(location.href.indexOf("https://www.youtube.com/") == 0){
   KickToplevelObserver();
 }
 
+chrome.storage.onChanged.addListener((changes, namespace)=>{
+  for(const [key, {oldValue, newValue}] of Object.entries(changes)){
+    switch(key){
+      case "isDisableSpeechIfSameLocaleVideo":
+        FetchCaptionData(true);
+        return;
+      default:
+        break;
+    }
+  }
+});
