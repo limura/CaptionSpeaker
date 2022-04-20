@@ -303,16 +303,24 @@ function IsValidVideoDuration(duration, captionData){
   return duration >= maxMillisecond / 1000;
 }
 
-function IsTargetUrl(){
-  const url = location.href;
+function IsTargetUrlWithOption(url, storageResult){
+  if(storageResult.isDisableSpeechEmbeddedSite){
+    return url.indexOf("https://www.youtube.com/watch?") == 0;
+  }
   return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
+}
+
+async function IsTargetUrl(){
+  const url = location.href;
+  const storageResult = await getStorageSync(["isDisableSpeechEmbeddedSite"]);
+  return IsTargetUrlWithOption(url, storageResult);
 }
 
 // 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
 async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   //console.log("CaptionSpeaker checking location", location.href);
-  if(!IsTargetUrl()){return;}
-  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech"]);
+  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite"]);
+  if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
   const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
   if(!isEnabled){return;}
   let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
@@ -395,16 +403,19 @@ async function KickToplevelObserver(){
   ToplevelObserver = new MutationObserver((mutationList, observer) => {
     //console.log("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
     const videoId = GetVideoId();
-    if(IsTargetUrl()){
-      if(videoId == CURRENT_VIDEO_ID){return;}
-      // UpdateCaptionData は /watch?v=... の ... が変わった時だけで良いはず
-      ContentScriptLoadTime = new Date(); // ページが変わったぽいので load time を解消しておきます
-      console.log("toplevel changed. calling UpdateCaptionData()");
-      UpdateCaptionData();
-      StartVideoTimeChecker();
-    }else{
-      StopVideoTimeChecker();
-    }
+    IsTargetUrl().then((isTargetUrl)=>{
+      console.log("isTargetUrl:", isTargetUrl);
+      if(isTargetUrl){
+        if(videoId == CURRENT_VIDEO_ID){return;}
+        // UpdateCaptionData は /watch?v=... の ... が変わった時だけで良いはず
+        ContentScriptLoadTime = new Date(); // ページが変わったぽいので load time を解消しておきます
+        console.log("toplevel changed. calling UpdateCaptionData()");
+        UpdateCaptionData();
+        StartVideoTimeChecker();
+      }else{
+        StopVideoTimeChecker();
+      }
+    });
   });
   const toplevel = document.body;
   ToplevelObserver.observe(toplevel, {
@@ -413,12 +424,8 @@ async function KickToplevelObserver(){
   });
 }
 
-// とりあえず Youtube のURLにだけ反応するようにします。
-// これをやっておかないと "<all_urls>" を対象にしている時に
-// 必要の無いURLでも動き始めてしまう事になります。
+// www.youtube.com の時は toplevelobserver を仕掛けておかないと、画面遷移時に開始できない事があります。
 if(location.href.indexOf("https://www.youtube.com/") == 0){
-  LoadBooleanSettings();
-  //UpdateCaptionData(); // ← 最初の一発目は watcher が走らせてくれるはずなので、この時点では必要ないため、コメントアウトしておきます
   KickToplevelObserver();
 }
 
@@ -428,6 +435,11 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
       case "isDisableSpeechIfSameLocaleVideo":
         FetchCaptionData(true);
         return;
+      case "isDisableSpeechEmbeddedSite":
+        if(location.href.indexOf("https://www.youtube.com/embed/") == 0 && !newValue){
+          StartVideoTimeChecker();
+        }
+        break;
       default:
         break;
     }

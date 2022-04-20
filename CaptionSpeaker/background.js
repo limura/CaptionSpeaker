@@ -66,6 +66,7 @@ chrome.runtime.onMessage.addListener(
       break;
     }
     sendResponse();
+    return true;
   }
 );
 

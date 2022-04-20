@@ -109,6 +109,10 @@ function getIsDisableSpeechIfChaptionDisabled(){
   return document.getElementById("isDisableSpeechIfChaptionDisabled").checked ? 1 : 0;
 }
 
+function getIsDisableSpeechEmbeddedSite(){
+  return document.getElementById("isDisableSpeechEmbeddedSite").checked ? 1 : 0;
+}
+
 function getTestText(){
   var text = document.getElementById("testText").value;
   if(!text){
@@ -165,7 +169,8 @@ function saveButtonClicked(voices, savedInformationElement){
     "volume": getVolume(),
     "isStopIfNewSpeech": getIsStopIfNewSpeech(),
     "isDisableSpeechIfSameLocaleVideo": getIsDisableSpeechIfSameLocaleVideo(),
-    "isDisableSpeechIfChaptionDisabled": getIsDisableSpeechIfChaptionDisabled()
+    "isDisableSpeechIfChaptionDisabled": getIsDisableSpeechIfChaptionDisabled(),
+    "isDisableSpeechEmbeddedSite": getIsDisableSpeechEmbeddedSite(),
   });
   chrome.runtime.sendMessage({"type": "SettingsUpdated"});
 
@@ -187,7 +192,7 @@ function selectSelected(selectElement, targetValue){
 }
 
 function loadSettings(voices){
-  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled"], (storage)=>{
+  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite"], (storage)=>{
   if("lang" in storage){
     let lang = storage.lang;
     selectSelected(document.getElementById("langSelector").childNodes[0], lang);
@@ -222,11 +227,14 @@ function loadSettings(voices){
   if("isDisableSpeechIfChaptionDisabled" in storage){
     document.getElementById("isDisableSpeechIfChaptionDisabled").checked = storage.isDisableSpeechIfChaptionDisabled ? true : false;
   }
+  if("isDisableSpeechEmbeddedSite" in storage){
+    document.getElementById("isDisableSpeechEmbeddedSite").checked = storage.isDisableSpeechEmbeddedSite ? true : false;
+  }
   });
 }
 
 function clearSettings(){
-  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled"]);
+  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite"]);
   location.reload();
 }
 
