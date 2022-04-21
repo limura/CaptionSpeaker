@@ -113,6 +113,14 @@ function getIsDisableSpeechEmbeddedSite(){
   return document.getElementById("isDisableSpeechEmbeddedSite").checked ? 1 : 0;
 }
 
+function getIsOverrideOriginalVolumeEnabled(){
+  return document.getElementById("isOverrideOriginalVolumeEnabled").checked ? 1 : 0;
+}
+
+function getOverrideOriginalVolumeMagnification(){
+  return document.getElementById("overrideOriginalVolumeMagnification").value;
+}
+
 function getTestText(){
   var text = document.getElementById("testText").value;
   if(!text){
@@ -171,6 +179,8 @@ function saveButtonClicked(voices, savedInformationElement){
     "isDisableSpeechIfSameLocaleVideo": getIsDisableSpeechIfSameLocaleVideo(),
     "isDisableSpeechIfChaptionDisabled": getIsDisableSpeechIfChaptionDisabled(),
     "isDisableSpeechEmbeddedSite": getIsDisableSpeechEmbeddedSite(),
+    "isOverrideOriginalVolumeEnabled": getIsOverrideOriginalVolumeEnabled(),
+    "overrideOriginalVolumeMagnification": getOverrideOriginalVolumeMagnification(),
   });
   chrome.runtime.sendMessage({"type": "SettingsUpdated"});
 
@@ -192,7 +202,7 @@ function selectSelected(selectElement, targetValue){
 }
 
 function loadSettings(voices){
-  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite"], (storage)=>{
+  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"], (storage)=>{
   if("lang" in storage){
     let lang = storage.lang;
     selectSelected(document.getElementById("langSelector").childNodes[0], lang);
@@ -230,11 +240,19 @@ function loadSettings(voices){
   if("isDisableSpeechEmbeddedSite" in storage){
     document.getElementById("isDisableSpeechEmbeddedSite").checked = storage.isDisableSpeechEmbeddedSite ? true : false;
   }
+  if("isOverrideOriginalVolumeEnabled" in storage){
+    document.getElementById("isOverrideOriginalVolumeEnabled").checked = storage.isOverrideOriginalVolumeEnabled ? true : false;
+  }
+  if("overrideOriginalVolumeMagnification" in storage){
+    const mag = Math.max(0, Math.min(1, storage.overrideOriginalVolumeMagnification));
+    document.getElementById("overrideOriginalVolumeMagnification").value = mag;
+    document.getElementById("overrideOriginalVolumeMagnificationValue").innerHTML = mag;
+  }
   });
 }
 
 function clearSettings(){
-  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite"]);
+  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"]);
   location.reload();
 }
 
@@ -244,7 +262,7 @@ function createVoiceSelectElement(parentElement, voices, targetLang){
   parentElement.appendChild(createSelectElement(voiceNames, "voice", function(element){}));
 }
 
-function initRateValueWatcher(inputIdentity, valueIdentity){
+function initValueSliderWatcher(inputIdentity, valueIdentity){
   let input = document.getElementById(inputIdentity);
   let value = document.getElementById(valueIdentity);
   input.addEventListener('input', () => {
@@ -296,8 +314,9 @@ function init(){
     saveButtonClicked(voices, savedInformationElement);
   };
   document.getElementById("voiceSettingReset").onclick = clearSettings;
-  initRateValueWatcher("rate", "rateValue");
+  initValueSliderWatcher("rate", "rateValue");
   initRateMaxStrechExtension("rate", "rateValue", "isRateMaxStrech", "isRateMaxStrechWarningText");
+  initValueSliderWatcher("overrideOriginalVolumeMagnification", "overrideOriginalVolumeMagnificationValue");
   loadSettings(voices);
 };
 

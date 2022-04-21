@@ -6,6 +6,7 @@ var videoLengthSeconds = -1;
 var guessedOriginalCaptionLanguage = undefined;
 var CURRENT_VIDEO_ID = "invalid video id!";
 var prevCheckVideoTimeText = "";
+var originalVolume = undefined;
 
 var ContentScriptLoadTime = new Date();
 
@@ -257,7 +258,39 @@ function StorageResultToVoiceSettings(result){
   };
 }
 
-function AddSpeechQueue(text, storageResult){
+// video側 ではなく HTML側 からボリューム設定を読み取ります。
+// ただ、このDOMは読み出し損なう場合があるようなので、fallbackVolumeを受け取って、
+// 読み出せなかった場合はその値を返します。
+// 返却される値は 0 から 1  までの値であることを期待して良いです。
+function GetYtpVolumePanelValue(fallbackVolume){
+  const ytpVolumePanelCurrentValue = document.evaluate("//span[@class='ytp-volume-area']/div[@aria-valuenow]/@aria-valuenow", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0)?.value;
+  if(ytpVolumePanelCurrentValue){
+    return Math.min(1, Math.max(0, ytpVolumePanelCurrentValue / 100.0));
+  }
+  return fallbackVolume;
+}
+
+// 読み上げ開始時と終了時に元動画側のボリュームを弄るための関数。
+// 読み上げ開始と終了は前後する場合があるので、
+// 読み上げ開始時に+1, 終了時に -1 する値を作っておいて、
+// 0 以下になった時だけ元の音量に戻すようにします。
+// 具体的には、「新しく発話する時に前の発話を止める」オプションがONになっていて
+// 前の発話を止めてから新しく発話しようとした場合に、
+// 前の発話が止まった時の停止イベントよりも、
+// 新しく発話しようとして発話queueに詰める時の方が先に発生する、という事象が発生します。
+var overrideVolumeCount = 0;
+function volumeOverride(videoElement, originalVolume, targetVolumeMagnification){
+  overrideVolumeCount += 1;
+  videoElement.volume = Math.min(Math.max(0, originalVolume * targetVolumeMagnification), 1);
+}
+function volumeRecover(videoElement, originalVolume){
+  overrideVolumeCount -= 1;
+  if(overrideVolumeCount <= 0){
+    videoElement.volume = originalVolume;
+  }
+}
+
+function AddSpeechQueue(text, storageResult, videoElement){
   const utt = new SpeechSynthesisUtterance(text);
   const setting = StorageResultToVoiceSettings(storageResult);
   if(setting.voiceVoice){
@@ -268,6 +301,14 @@ function AddSpeechQueue(text, storageResult){
   utt.rate = setting.voiceRate;
   utt.volume = setting.voiceVolume;
   utt.onerror = function(event){console.log("SpeechSynthesisUtterance Event onError", event);};
+  if(storageResult.isOverrideOriginalVolumeEnabled && originalVolume && videoElement){
+    const targetVolume = GetYtpVolumePanelValue(originalVolume);
+    volumeOverride(videoElement, targetVolume, storageResult.overrideOriginalVolumeMagnification);
+    utt.onend = (event) => {
+      const targetVolume = GetYtpVolumePanelValue(originalVolume);
+      volumeRecover(videoElement, targetVolume);
+    };
+  }
   if(setting.isStopIfNewSpeech){
     //console.log("isStopIfNewSpeech is true");
     speechSynthesis.cancel();
@@ -276,14 +317,14 @@ function AddSpeechQueue(text, storageResult){
 }
 
 // 単純に秒単位で時間を確認して、前回読み上げた時間と変わっているのなら発話する、という事をします。
-function CheckAndSpeech(currentTimeText, storageResult){
+function CheckAndSpeech(currentTimeText, storageResult, videoElement){
   if(!currentTimeText){ console.log("currentTimeText is nil"); return;}
   if(currentTimeText == prevSpeakTime){ return;}
   if(storageResult.isDisableSpeechIfChaptionDisabled && !CheckCaptionIsDisplaying()){ return; }
   let caption = captionData[currentTimeText];
   if(caption){
     prevSpeakTime = currentTimeText;
-    AddSpeechQueue(caption.segment, storageResult);
+    AddSpeechQueue(caption.segment, storageResult, videoElement);
     return;
   }
   //console.log("no caption:", currentTimeText);
@@ -319,7 +360,7 @@ async function IsTargetUrl(){
 // 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
 async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   //console.log("CaptionSpeaker checking location", location.href);
-  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite"]);
+  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"]);
   if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
   const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
   if(!isEnabled){return;}
@@ -327,6 +368,13 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   if(!videoElement){
     console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
     return;
+  }
+  // このタイミングで元動画の音量設定を video 側から取得しておきます。
+  // ただ、このタイミングでしかこれは取得していないため、この取得したタイミングより後に
+  // 音量調整を手動で行われると誤動作するはずです。
+  // (GetYtpVolumePanelValue() 辺りでこの問題の解消を図っています)
+  if(typeof(originalVolume) == "undefined"){
+    originalVolume = videoElement.volume;
   }
   let currentTime = videoElement.currentTime;
   let duration = videoElement.duration;
@@ -340,7 +388,7 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
     let timeText = FormatTimeFromMillisecond((currentTime - gap) * 1000);
     if(prevCheckVideoTimeText == timeText){return;}
     prevCheckVideoTimeText = timeText;
-    CheckAndSpeech(timeText, storageResult);
+    CheckAndSpeech(timeText, storageResult, videoElement);
   }
 }
 
@@ -377,7 +425,10 @@ var VideoTimeCheckTimerID = undefined;
 
 function StartVideoTimeChecker(){
   if(CURRENT_VIDEO_ID == GetVideoId()){
-    CheckVideoCurrentTime();
+    CheckVideoCurrentTime().catch((e)=>{
+      console.log("CheckVideoCurrentTime got error. video time checker stop:", e);
+      StopVideoTimeChecker();
+    });
   }
   VideoTimeCheckTimerID = setTimeout(StartVideoTimeChecker, 250);
 }
@@ -404,17 +455,17 @@ async function KickToplevelObserver(){
     //console.log("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
     const videoId = GetVideoId();
     IsTargetUrl().then((isTargetUrl)=>{
-      console.log("isTargetUrl:", isTargetUrl);
       if(isTargetUrl){
         if(videoId == CURRENT_VIDEO_ID){return;}
         // UpdateCaptionData は /watch?v=... の ... が変わった時だけで良いはず
         ContentScriptLoadTime = new Date(); // ページが変わったぽいので load time を解消しておきます
-        console.log("toplevel changed. calling UpdateCaptionData()");
         UpdateCaptionData();
         StartVideoTimeChecker();
       }else{
         StopVideoTimeChecker();
       }
+    }).catch(e => {
+      console.log("ToplevelObserver: IsTargetUrl got error", e);
     });
   });
   const toplevel = document.body;

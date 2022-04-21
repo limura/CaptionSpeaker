@@ -56,6 +56,9 @@
   "OptionsPageIsDisableSpeechEmbeddedSite": {
     "message": "阻止它处理嵌入式视频"
   },
+  "OptionsPageIsOverrideOriginalVolumeEnabled": {
+    "message": "说话时降低原始视频的音量（按比例指定）"
+  },
   "OptionsPageReleaseNotes": {
     "message": "2.0.0 版：支持范围已扩展到嵌入其他网站的 youtube 视频（如果您不需要它，请打开“阻止它处理嵌入式视频”。）。 另外，为了顺应 Chrome 扩展的规范变化，我们对 manifest v3 做了支持。 有了这种支持，所有保存的设置都可以被删除。 因此，请再次在此设置屏幕上进行适当的设置。 在版本 2.* 中，我们试图不改变与版本 1.* 相比的行为，但由于内部实现发生了显着变化，它可能会表现不同或变得无法操作。"
   }

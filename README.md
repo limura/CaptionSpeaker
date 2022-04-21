@@ -45,6 +45,7 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 - Manifest V3 に対応させた
 - チャンネル(www.youtube.com/channel/...)やプレイリスト(www.youtube.com/playlist?list=...)から動画のページに遷移した時に発話しない問題を解消
 - www.youtube.com以外のページへの埋込 youtube動画(iframe で www.youtube.com/embed... が取り込まれるタイプのもの)に対応(なお、youtube内で「キューに追加」した時に表示されるミニプレイヤーには非対応です)
+- 「発話中に元動画の音量を下げる」設定を追加
 
 # 既知の問題
 
