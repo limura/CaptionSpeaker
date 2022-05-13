@@ -213,7 +213,7 @@ function UpdatePlayLocale(locale){
     playLocale = l;
     // locale が変わっていたなら、今読み込まれている字幕データは破棄して新しく読み直さないと謎の発話を続ける事になります。
     captionData = {};
-    UpdateCaptionData();
+    FetchCaptionData(true);
   }
 }
 
