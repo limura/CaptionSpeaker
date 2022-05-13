@@ -439,6 +439,22 @@ function StopVideoTimeChecker(){
   }
 }
 
+async function CheckPlayLocaleUpdate(){
+  const storageResult = await getStorageSync(["lang", "voice"]);
+  let lang = storageResult.lang;
+  let voiceName = storageResult.voice;
+  let voiceList = speechSynthesis.getVoices();
+  for(voice of voiceList){
+    if(voice.lang == lang && voice.name == voiceName){
+      let l = lang?.replace(/-.*$/, '');
+      if(l?.length > 0 && playLocale != l){
+        playLocale = l;
+      }
+      return;
+    }
+  }
+}
+
 // https://www.youtube.com/ の時に仕掛ける mutation observer.
 // Youtube は /channel/ から動画をクリックして /watch?v=... に遷移した時に
 // URLを移動したという感じのイベントが発生しないぽくて、
@@ -477,7 +493,10 @@ async function KickToplevelObserver(){
 
 // www.youtube.com の時は toplevelobserver を仕掛けておかないと、画面遷移時に開始できない事があります。
 if(location.href.indexOf("https://www.youtube.com/") == 0){
-  KickToplevelObserver();
+  (async ()=>{
+    await CheckPlayLocaleUpdate();
+    KickToplevelObserver();
+  })();
 }
 
 chrome.storage.onChanged.addListener((changes, namespace)=>{
@@ -491,6 +510,10 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
           StartVideoTimeChecker();
         }
         break;
+      case "lang":
+        console.log("lang changed. update play locale...");
+        UpdatePlayLocale(newValue);
+        return;
       default:
         break;
     }
