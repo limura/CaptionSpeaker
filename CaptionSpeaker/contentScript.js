@@ -73,6 +73,17 @@ async function GetYoutbeiV1PlayerData(){
       }
     });
     const resData = await res.json();
+    if(resData?.playabilityStatus?.status == "LOGIN_REQUIRED") {
+      console.log("resData say 'LOGIN_REQUIRED' (maybe private video). now try ytInitialPlayerResponse data get.");
+      const ytInitialPlayerResponseElement = document.evaluate("//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
+      if(!ytInitialPlayerResponseElement){
+        console.log("ytInitialPlayerResponse not found.");
+        return undefined;
+      }
+      const ytInitialPlayerResponseCode = ytInitialPlayerResponseElement.innerText.replace("var ytInitialPlayerResponse = ","").replace(/};var head.*/, '}');
+      const ytInitialPlayerResponseObject = JSON.parse(ytInitialPlayerResponseCode);
+      return ytInitialPlayerResponseObject;
+    }
     return resData;
   }catch(err){
     console.log("GetYoutbeiV1PlayerData got error", err, ytCfgJSON);
