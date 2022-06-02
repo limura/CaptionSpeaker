@@ -73,8 +73,8 @@ async function GetYoutbeiV1PlayerData(){
       }
     });
     const resData = await res.json();
-    if(resData?.playabilityStatus?.status == "LOGIN_REQUIRED") {
-      console.log("resData say 'LOGIN_REQUIRED' (maybe private video). now try ytInitialPlayerResponse data get.");
+    if(!(resData?.captions?.playerCaptionsTracklistRenderer?.captionTracks)) {
+      console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse");
       const ytInitialPlayerResponseElement = document.evaluate("//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
       if(!ytInitialPlayerResponseElement){
         console.log("ytInitialPlayerResponse not found.");
