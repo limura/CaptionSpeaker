@@ -50,6 +50,9 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 ## Verson 2.0.1 (2022/05)
 - ブラウザの言語設定(window.navigator.language)と読み上げ対象の言語が違っている場合に、ブラウザの言語設定側の言語を発話しようとする問題を修正
 
+## Version 2.0.2 (2022/06)
+- 字幕を取得できなかった時に次点の情報を取りに行く事で、字幕が取得できなくなる可能性を減らした
+
 # 既知の問題
 
 macOS Catalina では標準の話者での発話が失敗することがあるようです。
