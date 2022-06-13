@@ -74,13 +74,13 @@ async function GetYoutbeiV1PlayerData(){
     });
     const resData = await res.json();
     if(!(resData?.captions?.playerCaptionsTracklistRenderer?.captionTracks)) {
-      console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse");
+      console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
       const ytInitialPlayerResponseElement = document.evaluate("//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
       if(!ytInitialPlayerResponseElement){
         console.log("ytInitialPlayerResponse not found.");
         return undefined;
       }
-      const ytInitialPlayerResponseCode = ytInitialPlayerResponseElement.innerText.replace("var ytInitialPlayerResponse = ","").replace(/};var head.*/, '}');
+      const ytInitialPlayerResponseCode = ytInitialPlayerResponseElement.innerText.replace("var ytInitialPlayerResponse = ","").replace(/};var .*/, '}');
       const ytInitialPlayerResponseObject = JSON.parse(ytInitialPlayerResponseCode);
       return ytInitialPlayerResponseObject;
     }
