@@ -538,7 +538,7 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
         break;
     }
   }
-});
+}); 
 
 // a flag to repeat previous captions after a pause
 let wasPaused = false;
@@ -555,7 +555,8 @@ const screenObserver = new MutationObserver(function (mutations) {
   });
 });
 
-// configuration of the screen observer
-const config = { attributes: true };
-
-if (screen) screenObserver.observe(screen, config);
+if (screen) {
+  // configuration of the screen observer
+  const config = { attributes: true };
+  screenObserver.observe(screen, config);
+}
