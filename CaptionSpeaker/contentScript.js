@@ -336,6 +336,15 @@ function CheckAndSpeech(currentTimeText, storageResult, videoElement){
   if(caption){
     prevSpeakTime = currentTimeText;
     AddSpeechQueue(caption.segment, storageResult, videoElement);
+    wasPaused = false;
+    return;
+  }
+// if no new captions after a pause, let's repeat the last captions
+  if (wasPaused) {
+    currentTimeText = prevSpeakTime;
+    caption = captionData[currentTimeText];
+    AddSpeechQueue(caption.segment, storageResult, videoElement);
+    wasPaused = false;
     return;
   }
   //console.log("no caption:", currentTimeText);
@@ -529,4 +538,25 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
         break;
     }
   }
+}); 
+
+// a flag to repeat previous captions after a pause
+let wasPaused = false;
+
+const screen = document.getElementById("movie_player");
+
+// screen observer to react on pause and play
+const screenObserver = new MutationObserver(function (mutations) {
+  mutations.forEach(function (mutation) {
+    if (screen.classList.contains("paused-mode")) {
+      wasPaused = true;
+      speechSynthesis.cancel();
+    }
+  });
 });
+
+if (screen) {
+  // configuration of the screen observer
+  const config = { attributes: true };
+  screenObserver.observe(screen, config);
+}
