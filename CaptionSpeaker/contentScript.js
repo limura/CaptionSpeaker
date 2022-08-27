@@ -563,7 +563,7 @@ let paused = false;
 let pauseTime
 let videoUrl
 
-const screen = document.getElementById("movie_player");
+const screen = document.querySelector("#movie_player[class*='html5-video-player']");
 const videoStreamElement = getVideoElement()
 
 // movie_player observer to react on pause
