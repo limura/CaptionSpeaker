@@ -601,4 +601,9 @@ if (screen) {
   videoUrl = getVideoUrl()
   const config = { attributes: true };
   screenObserver.observe(screen, config);
+
+  // prevents from speaking a remaining part of a speech when changing tabs
+window.addEventListener("blur", function(event) {
+  if (paused) speechSynthesis.cancel()
+});
 }
