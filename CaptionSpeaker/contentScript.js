@@ -327,9 +327,10 @@ function AddSpeechQueue(text, storageResult, videoElement){
 
   // prevents from no speaking when switching tabs
   // it seems better to also check if speechSynthesis.paused, but for some reasons it returns false even when it's paused
-  if (ifScreenClassesContain("playing-mode")) {
-    paused = false
-    speechSynthesis.resume()
+  const screen = document.querySelector("#movie_player[class*='html5-video-player']");
+  if (screen.classList.contains("playing-mode")) {
+    paused = false;
+    speechSynthesis.resume();
   }
   speechSynthesis.speak(utt);
 }
@@ -382,7 +383,7 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
   const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
   if(!isEnabled){return;}
-  let videoElement = getVideoElement()
+  let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
   if(!videoElement){
     console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
     return;
@@ -538,72 +539,64 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
   }
 });
 
-function getVideoElement(){
-  return document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
-}
+function InitializeScreenObserver(){
 
-function getVideoUrl(){  
-  if (videoStreamElement) return videoStreamElement.getAttribute("src")
-}
+  const screen = document.querySelector("#movie_player[class*='html5-video-player']");
 
-// returns undefined if videoStreamElement is not found,
-function getCurrentTime(){
-  if (videoStreamElement) return videoStreamElement.currentTime
-}
+  // if screen is not on the page - return
+  if (!screen){
+    return;
+  }
 
-function ifScreenClassesContain(cls){
-  if (!screen) return false
-  return (screen.classList.contains(cls) ? true : false)
-}
-
-// prevents from speaking a remaining part of a speech when opening a new YouTube tab
-speechSynthesis.cancel() 
-
-let paused = false;
-let pauseTime
-let videoUrl
-
-const screen = document.querySelector("#movie_player[class*='html5-video-player']");
-const videoStreamElement = getVideoElement()
-
-// movie_player observer to react on pause
-const screenObserver = new MutationObserver(function (mutations) {
-  mutations.forEach(function (mutation) {
-    
-    // cancels speechSynthesis if url was changed
-    const videoUrlNow = getVideoUrl()
-    if (videoUrlNow != videoUrl){
-      videoUrl = videoUrlNow
-      speechSynthesis.cancel()
-      return
-    }
-
-    if (ifScreenClassesContain("paused-mode")) {
-      if (paused) return
-      paused = true
-      speechSynthesis.pause();
-      pauseTime = getCurrentTime()      
-    }
-    if (ifScreenClassesContain("playing-mode")) {
-      if (!paused) return
-      paused = false
-      // resumes if the time before and after the pause differs by less than 1 sec, or if undefined (videoElement is not found)
-      if (Math.abs(getCurrentTime() - pauseTime) > 1)
-        speechSynthesis.cancel() 
-      else 
-        speechSynthesis.resume()
-    }
-  });
-});
-
-if (screen) {
+  // prevents from speaking a remaining part of a speech when opening a new YouTube tab
+  speechSynthesis.cancel();
+  
   // configuration of the screen observer
-  videoUrl = getVideoUrl()
-  const config = { attributes: true };
+  const config = { attributes: true, subtree: true, attributeFilter: ['class', 'src']};
+
   screenObserver.observe(screen, config);
 
   // prevents from speaking a remaining part of a speech when changing tabs
 window.addEventListener("blur", function(event) {
-  if (paused) speechSynthesis.cancel()
+  if (paused) speechSynthesis.cancel();
 });
 }
+
+let paused = false;
+let pauseTime;
+
+// movie_player observer to react on pause
+const screenObserver = new MutationObserver(function (mutations) {
+  mutations.forEach(function (mutation) {
+
+    // cancels speechSynthesis if url was changed
+    if (mutation.attributeName === "src"){
+        speechSynthesis.cancel();
+        return;
+    }
+
+    if (mutation.target.classList.contains("paused-mode")) {
+      if (paused) {
+        return;
+      }
+      paused = true;
+      speechSynthesis.pause();
+      pauseTime = mutation.target.querySelector(".video-stream").currentTime;   
+    }
+    if (mutation.target.classList.contains("playing-mode")) {
+      if (!paused) {
+        return;
+      }
+      paused = false;
+      // resumes if the time before and after the pause differs by less than 1 sec, or if undefined (videoElement is not found)
+      if (Math.abs(mutation.target.querySelector(".video-stream").currentTime - pauseTime) > 1){
+        speechSynthesis.cancel();
+      }
+      else {
+        speechSynthesis.resume();
+      }
+    }
+  });
+});
+
+InitializeScreenObserver();
