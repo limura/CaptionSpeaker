@@ -324,6 +324,14 @@ function AddSpeechQueue(text, storageResult, videoElement){
     //console.log("isStopIfNewSpeech is true");
     speechSynthesis.cancel();
   }
+
+  // prevents from no speaking when switching tabs
+  // it seems better to also check if speechSynthesis.paused, but for some reasons it returns false even when it's paused
+  const screen = document.querySelector("#movie_player[class*='html5-video-player']");
+  if (screen.classList.contains("playing-mode")) {
+    paused = false;
+    speechSynthesis.resume();
+  }
   speechSynthesis.speak(utt);
 }
 
@@ -530,3 +538,65 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
     }
   }
 });
+
+function InitializeScreenObserver(){
+
+  const screen = document.querySelector("#movie_player[class*='html5-video-player']");
+
+  // if screen is not on the page - return
+  if (!screen){
+    return;
+  }
+
+  // prevents from speaking a remaining part of a speech when opening a new YouTube tab
+  speechSynthesis.cancel();
+  
+  // configuration of the screen observer
+  const config = { attributes: true, subtree: true, attributeFilter: ['class', 'src']};
+
+  screenObserver.observe(screen, config);
+
+  // prevents from speaking a remaining part of a speech when changing tabs
+window.addEventListener("blur", function(event) {
+  if (paused) speechSynthesis.cancel();
+});
+}
+
+let paused = false;
+let pauseTime;
+
+// movie_player observer to react on pause
+const screenObserver = new MutationObserver(function (mutations) {
+  mutations.forEach(function (mutation) {
+
+    // cancels speechSynthesis if url was changed
+    if (mutation.attributeName === "src"){
+        speechSynthesis.cancel();
+        return;
+    }
+
+    if (mutation.target.classList.contains("paused-mode")) {
+      if (paused) {
+        return;
+      }
+      paused = true;
+      speechSynthesis.pause();
+      pauseTime = mutation.target.querySelector(".video-stream").currentTime;   
+    }
+    if (mutation.target.classList.contains("playing-mode")) {
+      if (!paused) {
+        return;
+      }
+      paused = false;
+      // resumes if the time before and after the pause differs by less than 1 sec, or if undefined (videoElement is not found)
+      if (Math.abs(mutation.target.querySelector(".video-stream").currentTime - pauseTime) > 1){
+        speechSynthesis.cancel();
+      }
+      else {
+        speechSynthesis.resume();
+      }
+    }
+  });
+});
+
+InitializeScreenObserver();
