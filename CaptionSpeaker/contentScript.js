@@ -343,7 +343,8 @@ function CheckAndSpeech(currentTimeText, storageResult, videoElement){
   let caption = captionData[currentTimeText];
   if(caption){
     prevSpeakTime = currentTimeText;
-    AddSpeechQueue(caption.segment, storageResult, videoElement);
+    var textVoice = caption.segment.replace(/(\n)/g, x => {return " "; })
+    AddSpeechQueue(textVoice, storageResult, videoElement);
     return;
   }
   //console.log("no caption:", currentTimeText);
