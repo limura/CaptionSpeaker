@@ -56,6 +56,9 @@
   "OptionsPageIsDisableSpeechEmbeddedSite": {
     "message": "阻止它处理嵌入式视频"
   },
+  "OptionsSpeechWithoutSyncEnabled": {
+    "message": "不同步时间的语音"
+  },
   "OptionsPageIsOverrideOriginalVolumeEnabled": {
     "message": "说话时降低原始视频的音量（按比例指定）"
   },
