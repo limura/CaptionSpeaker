@@ -116,7 +116,9 @@ function getIsDisableSpeechEmbeddedSite(){
 function getIsOverrideOriginalVolumeEnabled(){
   return document.getElementById("isOverrideOriginalVolumeEnabled").checked ? 1 : 0;
 }
-
+function getIsSpeechWithoutSyncEnabled(){
+  return document.getElementById("isSpeechWithoutSyncEnabled").checked ? 1 : 0;
+}
 function getOverrideOriginalVolumeMagnification(){
   return document.getElementById("overrideOriginalVolumeMagnification").value;
 }
@@ -180,6 +182,7 @@ function saveButtonClicked(voices, savedInformationElement){
     "isDisableSpeechIfChaptionDisabled": getIsDisableSpeechIfChaptionDisabled(),
     "isDisableSpeechEmbeddedSite": getIsDisableSpeechEmbeddedSite(),
     "isOverrideOriginalVolumeEnabled": getIsOverrideOriginalVolumeEnabled(),
+    "isSpeechWithoutSyncEnabled": getIsSpeechWithoutSyncEnabled(),
     "overrideOriginalVolumeMagnification": getOverrideOriginalVolumeMagnification(),
   });
   chrome.runtime.sendMessage({"type": "SettingsUpdated"});
@@ -202,7 +205,7 @@ function selectSelected(selectElement, targetValue){
 }
 
 function loadSettings(voices){
-  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"], (storage)=>{
+  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "isSpeechWithoutSyncEnabled", "overrideOriginalVolumeMagnification"], (storage)=>{
   if("lang" in storage){
     let lang = storage.lang;
     selectSelected(document.getElementById("langSelector").childNodes[0], lang);
@@ -239,6 +242,9 @@ function loadSettings(voices){
   }
   if("isDisableSpeechEmbeddedSite" in storage){
     document.getElementById("isDisableSpeechEmbeddedSite").checked = storage.isDisableSpeechEmbeddedSite ? true : false;
+  }
+  if ("isSpeechWithoutSyncEnabled" in storage){
+    document.getElementById("isSpeechWithoutSyncEnabled").checked = storage.isSpeechWithoutSyncEnabled ? true : false;
   }
   if("isOverrideOriginalVolumeEnabled" in storage){
     document.getElementById("isOverrideOriginalVolumeEnabled").checked = storage.isOverrideOriginalVolumeEnabled ? true : false;

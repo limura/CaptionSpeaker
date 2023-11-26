@@ -56,6 +56,9 @@
   "OptionsPageIsDisableSpeechEmbeddedSite": {
     "message": "Prevent it from working with embedded videos"
   },
+  "OptionsSpeechWithoutSyncEnabled": {
+    "message": "Speech without syncing time"
+  },
   "OptionsPageIsOverrideOriginalVolumeEnabled": {
     "message": "Decrease the volume of the original video during utterance (specify by ratio)"
   },
