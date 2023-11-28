@@ -130,7 +130,7 @@ async function FetchCaptionData(isForceFetch = false){
     if(!response){isCaptionDataFetching = false;return undefined;}
     const json = await response.json();
     if(!json){isCaptionDataFetching = false;return undefined;}
-    const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo"]);
+    const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
     if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
       captionData = {};
       isCaptionDataFetching = false;
@@ -138,14 +138,18 @@ async function FetchCaptionData(isForceFetch = false){
     }
     captionData = CaptionDataToTimeDict(json);
     CURRENT_VIDEO_ID = videoId;
-    console.log("captionData updated", GetVideoId(), captionData);
-    // 最初の一回目のCaptionDataの読み込み時には、読み込みが終わるまでの時間分を考慮させます
-    if(ContentScriptLoadTime){
-      const now = new Date();
-      const delay = (now.getTime() - ContentScriptLoadTime.getTime()) / 1000.0;
-      ContentScriptLoadTime = undefined;
-      console.log("delay:", delay);
-      CheckVideoCurrentTime(delay);
+    // console.log("captionData updated", GetVideoId(), captionData);
+    if (storageResult.isSpeechWithoutSyncEnabled) {
+      SpeechAllWithoutSync();
+    } else {
+      // 最初の一回目のCaptionDataの読み込み時には、読み込みが終わるまでの時間分を考慮させます
+      if (ContentScriptLoadTime) {
+        const now = new Date();
+        const delay = (now.getTime() - ContentScriptLoadTime.getTime()) / 1000.0;
+        ContentScriptLoadTime = undefined;
+        console.log("delay:", delay);
+        CheckVideoCurrentTime(delay);
+      }
     }
     isCaptionDataFetching = false;
   }catch(err){
@@ -302,7 +306,9 @@ function volumeRecover(videoElement, originalVolume){
 }
 
 function AddSpeechQueue(text, storageResult, videoElement){
-  const utt = new SpeechSynthesisUtterance(text);
+  var textVoice = text.replace(/(\n)/g, x => {return " "; })
+  // console.log(textVoice)
+  const utt = new SpeechSynthesisUtterance(textVoice);
   const setting = StorageResultToVoiceSettings(storageResult);
   if(setting.voiceVoice){
     utt.voice = setting.voiceVoice;
@@ -343,8 +349,7 @@ function CheckAndSpeech(currentTimeText, storageResult, videoElement){
   let caption = captionData[currentTimeText];
   if(caption){
     prevSpeakTime = currentTimeText;
-    var textVoice = caption.segment.replace(/(\n)/g, x => {return " "; })
-    AddSpeechQueue(textVoice, storageResult, videoElement);
+    AddSpeechQueue(caption.segment, storageResult, videoElement);
     return;
   }
   //console.log("no caption:", currentTimeText);
@@ -377,13 +382,42 @@ async function IsTargetUrl(){
   return IsTargetUrlWithOption(url, storageResult);
 }
 
-// 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
-async function CheckVideoCurrentTime(loadGapSecond = 0.0){
-  //console.log("CaptionSpeaker checking location", location.href);
+async function SpeechAllWithoutSync() {
   const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"]);
   if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
   const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
   if(!isEnabled){return;}
+  let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
+  if(!videoElement){
+    console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
+    return;
+  }
+  if(typeof(originalVolume) == "undefined"){
+    originalVolume = videoElement.volume;
+  }
+  let currentTime = videoElement.currentTime;
+  let duration = videoElement.duration;
+  if(isNaN(duration)){return;}
+  if(!IsValidVideoDuration(duration, captionData)){
+    console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
+    //UpdateCaptionData();
+    return;
+  }
+  var textVoice = ""
+  for (let key in captionData) {
+    textVoice = textVoice + " " + captionData[key].segment
+  }
+  speechSynthesis.cancel();
+  AddSpeechQueue(textVoice, storageResult, videoElement);
+}
+// 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
+async function CheckVideoCurrentTime(loadGapSecond = 0.0){
+  //console.log("CaptionSpeaker checking location", location.href);
+  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification","isSpeechWithoutSyncEnabled"]);
+  if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
+  const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
+  if(!isEnabled){return;}
+  if (storageResult.isSpeechWithoutSyncEnabled) return;
   let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
   if(!videoElement){
     console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
@@ -487,6 +521,7 @@ async function KickToplevelObserver(){
     ToplevelObserver.disconnect();
     ToplevelObserver = undefined;
   }
+  const storageResult = await getStorageSync(["isSpeechWithoutSyncEnabled"]);
   ToplevelObserver = new MutationObserver((mutationList, observer) => {
     //console.log("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
     const videoId = GetVideoId();
@@ -496,7 +531,9 @@ async function KickToplevelObserver(){
         // UpdateCaptionData は /watch?v=... の ... が変わった時だけで良いはず
         ContentScriptLoadTime = new Date(); // ページが変わったぽいので load time を解消しておきます
         UpdateCaptionData();
-        StartVideoTimeChecker();
+        if (!storageResult.isSpeechWithoutSyncEnabled) {
+          StartVideoTimeChecker();
+        }
       }else{
         StopVideoTimeChecker();
       }
@@ -527,6 +564,15 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
         return;
       case "isDisableSpeechEmbeddedSite":
         if(location.href.indexOf("https://www.youtube.com/embed/") == 0 && !newValue){
+          StartVideoTimeChecker();
+        }
+        break;
+      case "isSpeechWithoutSyncEnabled":
+        if (newValue) {
+          StopVideoTimeChecker();
+          SpeechAllWithoutSync();
+        } else {
+          speechSynthesis.cancel();
           StartVideoTimeChecker();
         }
         break;
