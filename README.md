@@ -56,6 +56,10 @@ Chrome webstore で[公開されています](https://chrome.google.com/webstore
 ## Version 2.0.3 (2022/06)
 - Version 2.0.2 で入れた次点の情報を取りに行く部分で、取得し損なう場合があった問題に対処
 
+## Version 2.0.4 (?)
+- 動画の再生を止めた時に発話も止まるようになります (Thanks @RonnieBlade)
+- 「オプション」に「時刻同期をせずに発話するようにする」のON/OFF設定が追加されます (Thanks @billythekidz)
+
 # 既知の問題
 
 macOS Catalina では標準の話者での発話が失敗することがあるようです。
