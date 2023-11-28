@@ -57,7 +57,7 @@
     "message": "埋め込みタイプの動画では動作しないようにする"
   },
   "OptionsSpeechWithoutSyncEnabled": {
-    "message": "時刻を同期せずに話す"
+    "message": "動画と時刻同期をせずに全てを一度に話すようにします"
   },
   "OptionsPageIsOverrideOriginalVolumeEnabled": {
     "message": "発話中に元動画の音量を下げる(比率で指定します)"
