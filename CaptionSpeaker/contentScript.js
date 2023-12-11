@@ -596,7 +596,17 @@ function InitializeScreenObserver(){
   }
 
   // prevents from speaking a remaining part of a speech when opening a new YouTube tab
-  speechSynthesis.cancel();
+  // 以下の speechSynthesis.cancel() は上記のコメントと一緒に追加されましたが、
+  // これのせいで他のタブで動作しているSpeechSynthesisが止まる問題が発生します。
+  // 具体的には TabSpeech に Autopagerize を組み合わせて複数ページに渡ったWebページを読み上げさせている時に、
+  // 別のタブでYoutubeを開いた時にこの部分の speechSynthesis.cancel() が発動し、
+  // TabSpeech側の発話が強制的に停止されます。
+  // この動作は意図していない動作になるため、避けるべきです。
+  // Extensionは他のアプリケーション(Extension)に影響を与えるべきではありません。
+  // したがって、この部分はコメントアウトしておきます。
+  // もしコメントアウトから戻したいのであれば、CaptionSpeakerとして発話しているかどうかを
+  // 「正しく」判定した上で動作するようにすべきです。
+  //speechSynthesis.cancel();
   
   // configuration of the screen observer
   const config = { attributes: true, subtree: true, attributeFilter: ['class', 'src']};
