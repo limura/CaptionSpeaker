@@ -9,6 +9,7 @@ var prevCheckVideoTimeText = "";
 var originalVolume = undefined;
 
 var ContentScriptLoadTime = new Date();
+var speakTargetUrl = undefined;
 
 function getStorageSync(keys = null){
   return new Promise(resolve => {
@@ -26,6 +27,16 @@ function GetVideoId(){
     return embedIDMatched[1];
   }
   return undefined;
+}
+
+// 発話を開始した事をURLで覚えておき、別のURLで起動した場合に誤動作で speechSynthesis.cancel() を呼ばないようにします。
+function startSpeech(speechSynthesis, utt) {
+  speakTargetUrl = location.href;
+  speechSynthesis.speak(utt);
+}
+function stopSpeechWithSpeakCheck(speechSynthesis) {
+  if(location.href != speakTargetUrl) return;
+  speechSynthesis.cancel()
 }
 
 /*
@@ -327,8 +338,7 @@ function AddSpeechQueue(text, storageResult, videoElement){
     };
   }
   if(setting.isStopIfNewSpeech){
-    //console.log("isStopIfNewSpeech is true");
-    speechSynthesis.cancel();
+    stopSpeechWithSpeakCheck(speechSynthesis);
   }
 
   // prevents from no speaking when switching tabs
@@ -338,7 +348,7 @@ function AddSpeechQueue(text, storageResult, videoElement){
     paused = false;
     speechSynthesis.resume();
   }
-  speechSynthesis.speak(utt);
+  startSpeech(speechSynthesis, utt);
 }
 
 // 単純に秒単位で時間を確認して、前回読み上げた時間と変わっているのなら発話する、という事をします。
@@ -407,7 +417,7 @@ async function SpeechAllWithoutSync() {
   for (let key in captionData) {
     textVoice = textVoice + " " + captionData[key].segment
   }
-  speechSynthesis.cancel();
+  stopSpeechWithSpeakCheck(speechSynthesis);
   AddSpeechQueue(textVoice, storageResult, videoElement);
 }
 // 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
@@ -454,7 +464,7 @@ async function LoadBooleanSettings(){
   const storageResult = await getStorageSync(["isEnabled"]);
   const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
   if(!isEnabled){
-    speechSynthesis.cancel();
+    stopSpeechWithSpeakCheck(speechSynthesis);
   }
 }
 chrome.runtime.onMessage.addListener(
@@ -572,7 +582,7 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
           StopVideoTimeChecker();
           SpeechAllWithoutSync();
         } else {
-          speechSynthesis.cancel();
+          stopSpeechWithSpeakCheck(speechSynthesis);
           StartVideoTimeChecker();
         }
         break;
@@ -596,17 +606,7 @@ function InitializeScreenObserver(){
   }
 
   // prevents from speaking a remaining part of a speech when opening a new YouTube tab
-  // 以下の speechSynthesis.cancel() は上記のコメントと一緒に追加されましたが、
-  // これのせいで他のタブで動作しているSpeechSynthesisが止まる問題が発生します。
-  // 具体的には TabSpeech に Autopagerize を組み合わせて複数ページに渡ったWebページを読み上げさせている時に、
-  // 別のタブでYoutubeを開いた時にこの部分の speechSynthesis.cancel() が発動し、
-  // TabSpeech側の発話が強制的に停止されます。
-  // この動作は意図していない動作になるため、避けるべきです。
-  // Extensionは他のアプリケーション(Extension)に影響を与えるべきではありません。
-  // したがって、この部分はコメントアウトしておきます。
-  // もしコメントアウトから戻したいのであれば、CaptionSpeakerとして発話しているかどうかを
-  // 「正しく」判定した上で動作するようにすべきです。
-  //speechSynthesis.cancel();
+  stopSpeechWithSpeakCheck(speechSynthesis);
   
   // configuration of the screen observer
   const config = { attributes: true, subtree: true, attributeFilter: ['class', 'src']};
@@ -615,7 +615,7 @@ function InitializeScreenObserver(){
 
   // prevents from speaking a remaining part of a speech when changing tabs
 window.addEventListener("blur", function(event) {
-  if (paused) speechSynthesis.cancel();
+  if (paused) stopSpeechWithSpeakCheck(speechSynthesis);
 });
 }
 
@@ -628,7 +628,7 @@ const screenObserver = new MutationObserver(function (mutations) {
 
     // cancels speechSynthesis if url was changed
     if (mutation.attributeName === "src"){
-        speechSynthesis.cancel();
+      stopSpeechWithSpeakCheck(speechSynthesis);
         return;
     }
 
@@ -647,7 +647,7 @@ const screenObserver = new MutationObserver(function (mutations) {
       paused = false;
       // resumes if the time before and after the pause differs by less than 1 sec, or if undefined (videoElement is not found)
       if (Math.abs(mutation.target.querySelector(".video-stream").currentTime - pauseTime) > 1){
-        speechSynthesis.cancel();
+        stopSpeechWithSpeakCheck(speechSynthesis);
       }
       else {
         speechSynthesis.resume();
