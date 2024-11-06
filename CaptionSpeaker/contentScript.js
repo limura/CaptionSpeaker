@@ -213,7 +213,7 @@ function CaptionDataToTimeDict(captionData){
     // そのまま読み上げるとぶつ切りで聞くに堪えない事になるため、
     // セグメント(表示上は一行分になるもの)についてはひとかたまりに加工しておきます。
     let segment = obj?.segs?.reduce((acc,current)=>{
-      let text = current?.utf8;
+      let text = current?.utf8.replace(/<\s*\/?(b|i|u|tt|big|small|sub|sup|em|strong|samp|code|kbd|var|cite)\s*>/ig, "");
       if(text){
         return acc + text;
       }
@@ -328,7 +328,10 @@ function AddSpeechQueue(text, storageResult, videoElement){
   utt.pitch = setting.voicePitch;
   utt.rate = setting.voiceRate;
   utt.volume = setting.voiceVolume;
-  utt.onerror = function(event){console.log("SpeechSynthesisUtterance Event onError", event);};
+  utt.onerror = function(event){
+    if(event.error == "interrupted") return;
+    console.log("SpeechSynthesisUtterance Event onError", event);
+  };
   if(storageResult.isOverrideOriginalVolumeEnabled && originalVolume && videoElement){
     const targetVolume = GetYtpVolumePanelValue(originalVolume);
     volumeOverride(videoElement, targetVolume, storageResult.overrideOriginalVolumeMagnification);
