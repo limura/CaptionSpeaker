@@ -26,6 +26,10 @@ function GetVideoId(){
   if(embedIDMatched && embedIDMatched.length > 0){
     return embedIDMatched[1];
   }
+  const liveIDMatched = window?.location?.href?.match(/\/live\/([^?]*)/);
+  if(liveIDMatched && liveIDMatched.length > 0){
+    return liveIDMatched[1];
+  }
   return undefined;
 }
 
@@ -85,7 +89,7 @@ async function GetYoutbeiV1PlayerData(){
     });
     const resData = await res.json();
     if(!(resData?.captions?.playerCaptionsTracklistRenderer?.captionTracks)) {
-      console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
+      //console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
       const ytInitialPlayerResponseElement = document.evaluate("//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
       if(!ytInitialPlayerResponseElement){
         console.log("ytInitialPlayerResponse not found.");
@@ -132,7 +136,7 @@ async function FetchCaptionData(isForceFetch = false){
   try {
     if(isCaptionDataFetching){return undefined;}
     isCaptionDataFetching = true;
-    console.log("FetchCaptionData start");
+    //console.log("FetchCaptionData start");
     const videoId = GetVideoId();
     if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
     const url = await GetCaptionDataUrl();
@@ -158,7 +162,7 @@ async function FetchCaptionData(isForceFetch = false){
         const now = new Date();
         const delay = (now.getTime() - ContentScriptLoadTime.getTime()) / 1000.0;
         ContentScriptLoadTime = undefined;
-        console.log("delay:", delay);
+        //console.log("delay:", delay);
         CheckVideoCurrentTime(delay);
       }
     }
@@ -384,9 +388,9 @@ function IsValidVideoDuration(duration, captionData){
 
 function IsTargetUrlWithOption(url, storageResult){
   if(storageResult.isDisableSpeechEmbeddedSite){
-    return url.indexOf("https://www.youtube.com/watch?") == 0;
+    return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/live/") == 0;
   }
-  return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
+  return url.indexOf("https://www.youtube.com/watch?") == 0 || url.indexOf("https://www.youtube.com/live/") == 0 || url.indexOf("https://www.youtube.com/embed/") == 0;
 }
 
 async function IsTargetUrl(){
@@ -447,7 +451,7 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   let duration = videoElement.duration;
   if(isNaN(duration)){return;}
   if(!IsValidVideoDuration(duration, captionData)){
-    console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
+    //console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
     UpdateCaptionData();
     return;
   }
@@ -590,7 +594,7 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
         }
         break;
       case "lang":
-        console.log("lang changed. update play locale...");
+        //console.log("lang changed. update play locale...");
         UpdatePlayLocale(newValue);
         return;
       default:
