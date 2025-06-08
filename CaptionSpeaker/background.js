@@ -95,3 +95,26 @@ chrome.storage.sync.get(["rate"], (data)=>{
     chrome.runtime.openOptionsPage();
   }
 });
+
+// そのタブから読み込まれたURLをcontent scriptに通知します。
+chrome.webRequest.onBeforeRequest.addListener(
+  function (details) {
+    const { tabId, url } = details;
+
+    // tabId -1 は拡張機能や非タブのリクエストなので除外
+    if (tabId >= 0) {
+	 if (!url.includes('https://www.youtube.com/api/timedtext')) {
+	  return;
+	 }
+      //console.log(`Tab ${tabId} accessed: ${url}`);
+
+      chrome.tabs.sendMessage(tabId, {
+        type: "url_accessed",
+        url: url
+      });
+    }
+  },
+  {
+    urls: ["https://www.youtube.com/*"]
+  }
+);

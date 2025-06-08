@@ -17,8 +17,12 @@
       "all_frames": true
     }
   ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ],
   "permissions": [
-    "storage"
+    "storage",
+	"webRequest"
   ],
   "action": {
     "default_title": "__MSG_PageActionDefaultTitle__",

@@ -132,19 +132,76 @@ async function GetCaptionDataUrl(){
 }
 
 var isCaptionDataFetching = false;
-async function FetchCaptionData(isForceFetch = false){
+async function FetchCaptionData_old(isForceFetch = false){
   try {
+    const url = await GetCaptionDataUrl();
+    if(!url){
+		//isCaptionDataFetching = false;
+		return undefined;
+	}
+	if(excludeAccessUrlList.includes(url)){
+		return undefined;
+	}
+
+	let response;
+	try {
+		excludeAccessUrlList.push(url);
+	    response = await fetch(url);
+	}catch(error) {
+		//console.log(`fetch error. await fetch() failed. url: ${url}, error: ${error}`);
+		//isCaptionDataFetching = false;
+		return undefined;
+	}
+	if(response && response.ok) {
+		// pass;
+	}else{
+		//console.log(`fetch error. response.ok: ${response?.ok} url: ${url}`, response);
+		//isCaptionDataFetching = false;
+		return undefined;
+	}
+	let json;
+	try {
+	    json = await response.json();
+	}catch(error) {
+		//console.log(`json decode error: ${error}`);
+		//isCaptionDataFetching = false;
+		return undefined;
+	}
+    if(!json){isCaptionDataFetching = false;return undefined;}
+	return json;
+  }catch(err){
+    console.log("FetchCaptionData got error:", err, window.location.href);
+    //isCaptionDataFetching = false;
+  }
+}
+
+async function FetchCaptionData(isForceFetch = false){
     if(isCaptionDataFetching){return undefined;}
     isCaptionDataFetching = true;
     //console.log("FetchCaptionData start");
     const videoId = GetVideoId();
     if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
-    const url = await GetCaptionDataUrl();
-    if(!url){isCaptionDataFetching = false;return undefined;}
-    const response = await fetch(url);
-    if(!response){isCaptionDataFetching = false;return undefined;}
-    const json = await response.json();
-    if(!json){isCaptionDataFetching = false;return undefined;}
+	let json = await FetchCaptionData_old(isForceFetch);
+	if (json === undefined) {
+		//console.log(`旧方式では駄目そうなので、新方式を試します。`);
+		// 旧方式では駄目そうなので、新方式を試します
+		let url = await getTimedTextUrl(playLocale);
+		let response;
+		try {
+			response = await fetch(url);
+		}catch(error) {
+			console.log(`CY: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
+			isCaptionDataFetching = false;
+			return undefined;
+		}
+		if(response && response.ok) {
+			json = await response.json();
+		}else{
+			console.log(`CY: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
+			isCaptionDataFetching = false;
+			return undefined;
+		}
+	}
     const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
     if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
       captionData = {};
@@ -153,7 +210,7 @@ async function FetchCaptionData(isForceFetch = false){
     }
     captionData = CaptionDataToTimeDict(json);
     CURRENT_VIDEO_ID = videoId;
-    // console.log("captionData updated", GetVideoId(), captionData);
+    //console.log("captionData updated", videoId, captionData);
     if (storageResult.isSpeechWithoutSyncEnabled) {
       SpeechAllWithoutSync();
     } else {
@@ -167,10 +224,6 @@ async function FetchCaptionData(isForceFetch = false){
       }
     }
     isCaptionDataFetching = false;
-  }catch(err){
-    console.log("FetchCaptionData got error:", err, window.location.href);
-    isCaptionDataFetching = false;
-  }
 }
 
 function FormatTimeFromMillisecond(millisecond){
@@ -463,6 +516,67 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   }
 }
 
+// 	"https://www.youtube.com/api/timedtext" で始まるURLがリクエストされた場合に貯めておきます。
+// これの、tlang=ja  の部分を書き換えることで自動翻訳のものが取り出せる事になります。
+var accessUrlList = []; // アクセスされた timedtext のURLリスト
+var excludeAccessUrlList = []; // 以前の timedtext URL 生成で取得されるものについては保存しないようにするためこれを覚えておきます。
+function onUrlAccessed(url) {
+	if(url.includes('https://www.youtube.com/api/timedtext') && (!excludeAccessUrlList.includes(url))){
+		accessUrlList.push(url);
+	}
+}
+
+async function doubleClickWithDelay(buttonElement) {
+    if (!buttonElement) {
+        return;
+    }
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    buttonElement.click();
+    await sleep(200);
+    buttonElement.click();
+    await sleep(100);
+}
+
+async function getTimedTextUrl(lang) {
+	if(accessUrlList.length <= 0) {
+		const button = document.evaluate(
+			"//button[contains(@class,'ytp-subtitles-button')]",
+			document,
+			null,
+			XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+			null
+		)?.snapshotItem(0);
+		await doubleClickWithDelay(button);
+		for(var i = 0; i < 10; i++){
+			if(accessUrlList.length > 0){
+				break;
+			}
+			const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+			await sleep(100);
+		}
+		if(accessUrlList.length <= 0){
+			//console.log("getTimedTextUrl() failed.");
+			return undefined;
+		}
+	}
+	let url = accessUrlList[0];
+	//console.log("CY: accessUrlList: ", accessUrlList, url);
+    try {
+        const urlObj = new URL(url);
+        const params = urlObj.searchParams;
+
+        // tlang を置換または追加
+        params.set('tlang', lang);
+
+        return urlObj.toString();
+    } catch (e) {
+        console.error("Invalid URL:", url, e);
+        return url; // パースできなかった場合は元の文字列を返す
+    }
+}
+
 function UpdateCaptionData(){
   FetchCaptionData();
 }
@@ -485,6 +599,9 @@ chrome.runtime.onMessage.addListener(
     case "LoadBooleanSettings":
       LoadBooleanSettings();
       break;
+	case "url_accessed":
+		onUrlAccessed(message.url);
+		break;
     default:
       break;
     }
