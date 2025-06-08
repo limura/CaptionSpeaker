@@ -177,6 +177,12 @@ async function FetchCaptionData_old(isForceFetch = false){
 
 async function FetchCaptionData(isForceFetch = false){
     if(isCaptionDataFetching){return undefined;}
+    const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
+    if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
+      captionData = {};
+      isCaptionDataFetching = false;
+      return undefined;
+    }
     isCaptionDataFetching = true;
     //console.log("FetchCaptionData start");
     const videoId = GetVideoId();
@@ -202,12 +208,6 @@ async function FetchCaptionData(isForceFetch = false){
 			return undefined;
 		}
 	}
-    const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
-    if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
-      captionData = {};
-      isCaptionDataFetching = false;
-      return undefined;
-    }
     captionData = CaptionDataToTimeDict(json);
     CURRENT_VIDEO_ID = videoId;
     //console.log("captionData updated", videoId, captionData);
