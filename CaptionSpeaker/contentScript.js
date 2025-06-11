@@ -194,6 +194,7 @@ async function FetchCaptionData(isForceFetch = false){
 		let url = await getTimedTextUrl(playLocale);
 		let response;
 		try {
+			excludeAccessUrlList.push(url);
 			response = await fetch(url);
 		}catch(error) {
 			console.log(`CY: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
@@ -561,7 +562,17 @@ async function getTimedTextUrl(lang) {
 			return undefined;
 		}
 	}
-	let url = accessUrlList[0];
+	let index = 0;
+	let url = undefined;
+	for(let index = 0; index < accessUrlList.length; index += 1){
+		url = accessUrlList[index];
+		if(excludeAccessUrlList.includes(url)){
+			continue;
+		}
+	}
+	if(url === undefined) {
+		return undefined;
+	}
 	//console.log("CY: accessUrlList: ", accessUrlList, url);
     try {
         const urlObj = new URL(url);
