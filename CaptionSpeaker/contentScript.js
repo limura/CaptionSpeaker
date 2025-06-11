@@ -108,14 +108,7 @@ async function GetYoutbeiV1PlayerData(){
 
 // ytplayer.config.args.player_response の中に含まれている字幕の情報から
 // 対象のロケールにおける(最適な)字幕データを取得するためのURLを生成します。
-async function GetCaptionDataUrl(){
-  const player_response_obj = await GetYoutbeiV1PlayerData();
-  // GetCaptionDataUrl() という関数なのに、ここでは怪しく player_response を読み込んでいます。('A`)
-  let lengthSeconds = VideoLengthSecondsFromPlayerResponse(player_response_obj);
-  if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
-  guessedOriginalCaptionLanguage = GuessVideoAutoTransrateOriginalLanguage(player_response_obj);
-  //console.log("guessedOriginalCaptionLanguage", guessedOriginalCaptionLanguage);
-
+async function GetCaptionDataUrl(player_response_obj){
   // 用意されている字幕でターゲットとなるロケールの物があればそれを使います
   let captionTracks = player_response_obj?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   let playLocaleCaptionBaseUrl = captionTracks?.filter(obj => obj?.languageCode == playLocale)[0]?.baseUrl;
@@ -132,9 +125,9 @@ async function GetCaptionDataUrl(){
 }
 
 var isCaptionDataFetching = false;
-async function FetchCaptionData_old(isForceFetch = false){
+async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
   try {
-    const url = await GetCaptionDataUrl();
+    const url = captionDataUrl;
     if(!url){
 		//isCaptionDataFetching = false;
 		return undefined;
@@ -177,17 +170,30 @@ async function FetchCaptionData_old(isForceFetch = false){
 
 async function FetchCaptionData(isForceFetch = false){
     if(isCaptionDataFetching){return undefined;}
-    const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
-    if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
-      captionData = {};
-      isCaptionDataFetching = false;
-      return undefined;
-    }
     isCaptionDataFetching = true;
     //console.log("FetchCaptionData start");
     const videoId = GetVideoId();
     if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
-	let json = await FetchCaptionData_old(isForceFetch);
+	let json = undefined;
+	try {
+		const player_response_obj = await GetYoutbeiV1PlayerData();
+		// player_response_obj に色々入っている値を取り出しておきます
+		let lengthSeconds = VideoLengthSecondsFromPlayerResponse(player_response_obj);
+		if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
+		guessedOriginalCaptionLanguage = GuessVideoAutoTransrateOriginalLanguage(player_response_obj);
+
+		const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
+		if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
+			captionData = {};
+			isCaptionDataFetching = false;
+			return undefined;
+		}
+
+		const url = await GetCaptionDataUrl(player_response_obj);
+		json = await FetchCaptionData_old(url, isForceFetch);
+	}catch {
+		// pass
+	}
 	if (json === undefined) {
 		//console.log(`旧方式では駄目そうなので、新方式を試します。`);
 		// 旧方式では駄目そうなので、新方式を試します
