@@ -138,6 +138,7 @@ async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
 
 	let response;
 	try {
+		//console.log("CS: captionData fetch(1). push excludeAccessUrlList:", url);
 		excludeAccessUrlList.push(url);
 	    response = await fetch(url);
 	}catch(error) {
@@ -175,6 +176,7 @@ async function FetchCaptionData(isForceFetch = false){
     const videoId = GetVideoId();
     if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
 	let json = undefined;
+	const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
 	try {
 		const player_response_obj = await GetYoutbeiV1PlayerData();
 		// player_response_obj に色々入っている値を取り出しておきます
@@ -182,43 +184,61 @@ async function FetchCaptionData(isForceFetch = false){
 		if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
 		guessedOriginalCaptionLanguage = GuessVideoAutoTransrateOriginalLanguage(player_response_obj);
 
-		const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
-		if(guessedOriginalCaptionLanguage == playLocale && storageResult.isDisableSpeechIfSameLocaleVideo){
+		if(guessedOriginalCaptionLanguage == playLocale && storageResult && storageResult.isDisableSpeechIfSameLocaleVideo){
 			captionData = {};
 			isCaptionDataFetching = false;
-			return undefined;
+			return;
 		}
 
 		const url = await GetCaptionDataUrl(player_response_obj);
 		json = await FetchCaptionData_old(url, isForceFetch);
-	}catch {
-		// pass
+	}catch(err){
+		console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
 	}
 	if (json === undefined) {
 		//console.log(`旧方式では駄目そうなので、新方式を試します。`);
 		// 旧方式では駄目そうなので、新方式を試します
-		let url = await getTimedTextUrl(playLocale);
+		let url = await getTimedTextUrl(playLocale, videoId);
+		if(url === undefined) {
+			captionData = {};
+			isCaptionDataFetching = false;
+			return;
+		}
 		let response;
 		try {
+			//console.log("CS: captionData fetch(2). push excludeAccessUrlList:", url);
 			excludeAccessUrlList.push(url);
 			response = await fetch(url);
 		}catch(error) {
-			console.log(`CY: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
+			console.log(`CS: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
+			captionData = {};
 			isCaptionDataFetching = false;
-			return undefined;
+			return;
 		}
 		if(response && response.ok) {
-			json = await response.json();
+			let text = await response.text();
+			try {
+				json = JSON.parse(text);
+			}catch(error){
+				console.log('CS: captionData JSON decode failed. text:', text, "url:", url);
+				captionData = {};
+				isCaptionDataFetching = false;
+				return;
+			}
 		}else{
-			console.log(`CY: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
+			console.log(`CS: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
+			text = await response.text();
+			console.log("CS: response.text():", text);
+			console.log("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
+			captionData = {};
 			isCaptionDataFetching = false;
-			return undefined;
+			return;
 		}
 	}
     captionData = CaptionDataToTimeDict(json);
     CURRENT_VIDEO_ID = videoId;
     //console.log("captionData updated", videoId, captionData);
-    if (storageResult.isSpeechWithoutSyncEnabled) {
+    if (storageResult && storageResult.isSpeechWithoutSyncEnabled) {
       SpeechAllWithoutSync();
     } else {
       // 最初の一回目のCaptionDataの読み込み時には、読み込みが終わるまでの時間分を考慮させます
@@ -383,6 +403,7 @@ function volumeRecover(videoElement, originalVolume){
 function AddSpeechQueue(text, storageResult, videoElement){
   var textVoice = text.replace(/(\n)/g, x => {return " "; })
   // console.log(textVoice)
+//console.log("CS: AddSpeechQueue", textVoice, videoElement, storageResult);
   const utt = new SpeechSynthesisUtterance(textVoice);
   const setting = StorageResultToVoiceSettings(storageResult);
   if(setting.voiceVoice){
@@ -420,6 +441,7 @@ function AddSpeechQueue(text, storageResult, videoElement){
 
 // 単純に秒単位で時間を確認して、前回読み上げた時間と変わっているのなら発話する、という事をします。
 function CheckAndSpeech(currentTimeText, storageResult, videoElement){
+  if(captionData === undefined){return;}
   if(!currentTimeText){ console.log("currentTimeText is nil"); return;}
   if(currentTimeText == prevSpeakTime){ return;}
   if(storageResult.isDisableSpeechIfChaptionDisabled && !CheckCaptionIsDisplaying()){ return; }
@@ -546,8 +568,15 @@ async function doubleClickWithDelay(buttonElement) {
     await sleep(100);
 }
 
-async function getTimedTextUrl(lang) {
-	if(accessUrlList.length <= 0) {
+async function getTimedTextUrl(lang, videoId) {
+	let filteredAccessUrlList = accessUrlList.filter((url) => {
+		return url.includes(`/timedtext?v=${videoId}`);
+	});
+	if(filteredAccessUrlList.length <= 0) {
+		// 広告の場合はなにもしないようにしたいので一応確認します。
+		if(document.querySelectorAll("#ytd-player .video-ads")[0]?.childNodes?.length > 0){
+			return undefined;
+		}
 		const button = document.evaluate(
 			"//button[contains(@class,'ytp-subtitles-button')]",
 			document,
@@ -557,29 +586,39 @@ async function getTimedTextUrl(lang) {
 		)?.snapshotItem(0);
 		await doubleClickWithDelay(button);
 		for(var i = 0; i < 10; i++){
-			if(accessUrlList.length > 0){
+			filteredAccessUrlList = accessUrlList.filter((url) => {
+				return url.includes(`/timedtext?v=${videoId}`);
+			});
+			if(filteredAccessUrlList.length > 0){
 				break;
 			}
 			const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 			await sleep(100);
 		}
-		if(accessUrlList.length <= 0){
-			//console.log("getTimedTextUrl() failed.");
+		if(filteredAccessUrlList.length <= 0){
+			console.log("CS: getTimedTextUrl() failed.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
 			return undefined;
 		}
 	}
-	let index = 0;
+	// 現在 filteredAccessUrlList に保存されているURLのうち、最後の URL を取り出します。
 	let url = undefined;
-	for(let index = 0; index < accessUrlList.length; index += 1){
-		url = accessUrlList[index];
-		if(excludeAccessUrlList.includes(url)){
+	for(let index = 0; index < filteredAccessUrlList.length; index += 1){
+		let currentUrl = filteredAccessUrlList[index];
+		if(!currentUrl) {
 			continue;
 		}
+		if(excludeAccessUrlList.includes(currentUrl)){
+			continue;
+		}
+		if(!currentUrl.includes(`/timedtext?v=${videoId}`)){
+			continue;
+		}
+		url = currentUrl;
 	}
 	if(url === undefined) {
+		console.log("CS: getTimedTextUrl return undefined. url not found.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
 		return undefined;
 	}
-	//console.log("CY: accessUrlList: ", accessUrlList, url);
     try {
         const urlObj = new URL(url);
         const params = urlObj.searchParams;

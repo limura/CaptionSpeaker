@@ -97,9 +97,11 @@ chrome.storage.sync.get(["rate"], (data)=>{
 });
 
 // そのタブから読み込まれたURLをcontent scriptに通知します。
-chrome.webRequest.onBeforeRequest.addListener(
+//chrome.webRequest.onBeforeRequest.addListener(
+chrome.webRequest.onCompleted.addListener(
   function (details) {
-    const { tabId, url } = details;
+    const { tabId, url, statusCode } = details;
+	if (statusCode != 200) { return; }
 
     // tabId -1 は拡張機能や非タブのリクエストなので除外
     if (tabId >= 0) {
@@ -115,6 +117,6 @@ chrome.webRequest.onBeforeRequest.addListener(
     }
   },
   {
-    urls: ["https://www.youtube.com/*"]
+    urls: ["https://www.youtube.com/api/timedtext*"]
   }
 );
