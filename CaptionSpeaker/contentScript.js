@@ -577,6 +577,11 @@ async function getTimedTextUrl(lang, videoId) {
 		if(document.querySelectorAll("#ytd-player .video-ads")[0]?.childNodes?.length > 0){
 			return undefined;
 		}
+		// 字幕ボタンが押しても効果がなさそうな場合も何もしないようにしたいので、確認します。
+		if(document.querySelectorAll('button.ytp-subtitles-button svg[fill-opacity="1"]')[0] === undefined){
+			return undefined;
+		}
+
 		const button = document.evaluate(
 			"//button[contains(@class,'ytp-subtitles-button')]",
 			document,
