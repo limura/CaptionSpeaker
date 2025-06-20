@@ -3,7 +3,7 @@
   "name": "CaptionSpeaker",
   "default_locale": "en",
   "description": "__MSG_appDescription__",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "icons": {
     "16": "icon/Icon16.png",
     "48": "icon/Icon48.png",
