@@ -111,13 +111,13 @@ async function GetYoutbeiV1PlayerData(){
 async function GetCaptionDataUrl(player_response_obj){
   // 用意されている字幕でターゲットとなるロケールの物があればそれを使います
   let captionTracks = player_response_obj?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if(!captionTracks){ return; }
   let playLocaleCaptionBaseUrl = captionTracks?.filter(obj => obj?.languageCode == playLocale)[0]?.baseUrl;
   if(playLocaleCaptionBaseUrl){
     return playLocaleCaptionBaseUrl + "&fmt=json3";
   }
 
   // なさそうなら、captionTracks の先頭の物から対象のロケールに書き換えた物を取得するようにします。
-  if(!captionTracks){ console.log("can not get captionTracks", player_response_obj); return; }
   let baseUrl = captionTracks[0]?.baseUrl;
   if(!baseUrl){ console.log("can not get baseUrl", player_response_obj); return; }
   let origUrl = baseUrl.replace(/,/g, "%2C");
@@ -420,10 +420,13 @@ function AddSpeechQueue(text, storageResult, videoElement){
   if(storageResult.isOverrideOriginalVolumeEnabled && originalVolume && videoElement){
     const targetVolume = GetYtpVolumePanelValue(originalVolume);
     volumeOverride(videoElement, targetVolume, storageResult.overrideOriginalVolumeMagnification);
-    utt.onend = (event) => {
+    const recoverFunc = (event) => {
       const targetVolume = GetYtpVolumePanelValue(originalVolume);
       volumeRecover(videoElement, targetVolume);
     };
+    utt.onend = recoverFunc;
+    utt.onerror = recoverFunc;
+    utt.onpause = recoverFunc;
   }
   if(setting.isStopIfNewSpeech){
     stopSpeechWithSpeakCheck(speechSynthesis);
@@ -568,6 +571,7 @@ async function doubleClickWithDelay(buttonElement) {
     await sleep(100);
 }
 
+let getTimedTextUrl_checkedVideoId = undefined;
 async function getTimedTextUrl(lang, videoId) {
 	let filteredAccessUrlList = accessUrlList.filter((url) => {
 		return url.includes(`/timedtext?v=${videoId}`);
@@ -589,7 +593,10 @@ async function getTimedTextUrl(lang, videoId) {
 			XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
 			null
 		)?.snapshotItem(0);
-		await doubleClickWithDelay(button);
+		if(getTimedTextUrl_checkedVideoId !== videoId) {
+			await doubleClickWithDelay(button);
+			getTimedTextUrl_checkedVideoId = videoId;
+		}
 		for(var i = 0; i < 10; i++){
 			filteredAccessUrlList = accessUrlList.filter((url) => {
 				return url.includes(`/timedtext?v=${videoId}`);
@@ -822,7 +829,9 @@ const screenObserver = new MutationObserver(function (mutations) {
         return;
       }
       paused = true;
-      speechSynthesis.pause();
+	  if(speechSynthesis.speaking) {
+		speechSynthesis.pause();
+	  }
       pauseTime = mutation.target.querySelector(".video-stream").currentTime;   
     }
     if (mutation.target.classList.contains("playing-mode")) {
