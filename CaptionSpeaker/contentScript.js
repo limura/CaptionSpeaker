@@ -92,7 +92,7 @@ async function GetYoutbeiV1PlayerData(){
       //console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
       const ytInitialPlayerResponseElement = document.evaluate("//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
       if(!ytInitialPlayerResponseElement){
-        console.log("ytInitialPlayerResponse not found.");
+        //console.log("ytInitialPlayerResponse not found.");
         return undefined;
       }
       const ytInitialPlayerResponseCode = ytInitialPlayerResponseElement.innerText.replace("var ytInitialPlayerResponse = ","").replace(/};var .*/, '}');
@@ -176,7 +176,11 @@ async function FetchCaptionData(isForceFetch = false){
     const videoId = GetVideoId();
     if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
 	let json = undefined;
-	const storageResult = await getStorageSync(["isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
+	const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
+  if(storageResult?.isEnabled == false) {
+    isCaptionDataFetching = false;
+    return undefined;
+  }
 	try {
 		const player_response_obj = await GetYoutbeiV1PlayerData();
 		// player_response_obj に色々入っている値を取り出しておきます
@@ -559,16 +563,31 @@ function onUrlAccessed(url) {
 }
 
 async function doubleClickWithDelay(buttonElement) {
-    if (!buttonElement) {
-        return;
+  if (!buttonElement) {
+    return;
+  }
+
+  let initialAriaPressed = buttonElement.getAttribute('aria-pressed');
+
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // 必ず2回はクリックしてなにがなんでも字幕を読み取ってもらいます
+  buttonElement.click();
+  await sleep(200);
+  buttonElement.click();
+  await sleep(200);
+  var ariaPressed = buttonElement.getAttribute('aria-pressed');
+  while(ariaPressed == null || ariaPressed == 'true'){
+    if(ariaPressed != null){
+      buttonElement.click();
     }
-
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-    buttonElement.click();
     await sleep(200);
-    buttonElement.click();
-    await sleep(100);
+    ariaPressed = buttonElement.getAttribute('aria-pressed');
+  }
+  if(ariaPressed != initialAriaPressed) {
+      buttonElement.click();
+  }
+  await sleep(100);
 }
 
 let getTimedTextUrl_checkedVideoId = undefined;
@@ -581,22 +600,36 @@ async function getTimedTextUrl(lang, videoId) {
 		if(document.querySelectorAll("#ytd-player .video-ads")[0]?.childNodes?.length > 0){
 			return undefined;
 		}
-		// 字幕ボタンが押しても効果がなさそうな場合も何もしないようにしたいので、確認します。
-		if(document.querySelectorAll('button.ytp-subtitles-button svg[fill-opacity="1"]')[0] === undefined){
-			return undefined;
-		}
+    // 再生を開始していない場合、字幕のON/OFFボタン自体が表示されないためスキップします
+    if(document.querySelector('button.player-control-play-pause-icon') == undefined) {
+      if(document.querySelector('video')?.paused == true){
+        //console.log("CS: 再生開始していないようなので無視します");
+        return undefined;
+      }
+    }
 
-		const button = document.evaluate(
-			"//button[contains(@class,'ytp-subtitles-button')]",
+    const button = document.evaluate(
+			"//button[contains(@class,'ytp-subtitles-button')]|//button[@class='ytmClosedCaptioningButtonButton']",
 			document,
 			null,
 			XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
 			null
 		)?.snapshotItem(0);
+    if(!button) {
+      //console.log("CS: 字幕ボタンがないので無視します", button);
+      return undefined;
+    }
+
+    // 字幕ボタンが押しても効果がなさそうな場合も何もしないようにしたいので、確認します。
+		if(button.getAttribute('aria-pressed') == null){
+      //console.log("CS: 押せない字幕ボタンだった(つまり字幕が設定されていない動画の)ようなので無視します");
+			return undefined;
+		}
+
 		if(getTimedTextUrl_checkedVideoId !== videoId) {
 			await doubleClickWithDelay(button);
 			getTimedTextUrl_checkedVideoId = videoId;
-		}
+    }
 		for(var i = 0; i < 10; i++){
 			filteredAccessUrlList = accessUrlList.filter((url) => {
 				return url.includes(`/timedtext?v=${videoId}`);
