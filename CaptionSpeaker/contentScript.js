@@ -218,40 +218,40 @@ async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
   try {
     const url = captionDataUrl;
     if(!url){
-		//isCaptionDataFetching = false;
-		return undefined;
-	}
-	if(excludeAccessUrlList.includes(url)){
-		return undefined;
-	}
+      //isCaptionDataFetching = false;
+      return undefined;
+    }
+    if(excludeAccessUrlList.includes(url)){
+      return undefined;
+    }
 
-	let response;
-	try {
-		//console.log("CS: captionData fetch(1). push excludeAccessUrlList:", url);
-		excludeAccessUrlList.push(url);
-	    response = await fetch(url);
-	}catch(error) {
-		//console.log(`fetch error. await fetch() failed. url: ${url}, error: ${error}`);
-		//isCaptionDataFetching = false;
-		return undefined;
-	}
-	if(response && response.ok) {
-		// pass;
-	}else{
-		//console.log(`fetch error. response.ok: ${response?.ok} url: ${url}`, response);
-		//isCaptionDataFetching = false;
-		return undefined;
-	}
-	let json;
-	try {
-	    json = await response.json();
-	}catch(error) {
-		//console.log(`json decode error: ${error}`);
-		//isCaptionDataFetching = false;
-		return undefined;
-	}
+    let response;
+    try {
+      //console.log("CS: captionData fetch(1). push excludeAccessUrlList:", url);
+      excludeAccessUrlList.push(url);
+      response = await fetch(url);
+    }catch(error) {
+      //console.log(`fetch error. await fetch() failed. url: ${url}, error: ${error}`);
+      //isCaptionDataFetching = false;
+      return undefined;
+    }
+    if(response && response.ok) {
+      // pass;
+    }else{
+      //console.log(`fetch error. response.ok: ${response?.ok} url: ${url}`, response);
+      //isCaptionDataFetching = false;
+      return undefined;
+    }
+    let json;
+    try {
+      json = await response.json();
+    }catch(error) {
+      //console.log(`json decode error: ${error}`);
+      //isCaptionDataFetching = false;
+      return undefined;
+    }
     if(!json){isCaptionDataFetching = false;return undefined;}
-	return json;
+    return json;
   }catch(err){
     console.log("FetchCaptionData got error:", err, window.location.href);
     //isCaptionDataFetching = false;
@@ -328,45 +328,45 @@ function consumeContentScriptLoadDelay(){
 }
 
 async function FetchCaptionData(isForceFetch = false){
-    if(isCaptionDataFetching){return undefined;}
-    isCaptionDataFetching = true;
-    try {
-      const videoId = GetVideoId();
-      if(videoId == CURRENT_VIDEO_ID && !isForceFetch){return undefined;}
-	  let json = undefined;
-	  const storageResult = await getStorageSync(CAPTION_FETCH_STORAGE_KEYS);
-      if(!isSpeechEnabled(storageResult)) {
-        return undefined;
-      }
-	  try {
-		json = await FetchCaptionDataFromPlayerResponse();
-        if(shouldSkipCaptionFetchByLocale(storageResult)){
-          clearCaptionData();
-          return undefined;
-        }
-	  }catch(err){
-		console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
-	  }
-	  if (json === undefined) {
-        json = await FetchCaptionDataFromTimedText(videoId);
-        if(json === undefined) {
-          clearCaptionData();
-          return undefined;
-        }
-	  }
-      applyFetchedCaptionData(json, videoId);
-      if (storageResult?.isSpeechWithoutSyncEnabled) {
-        SpeechAllWithoutSync();
-        return undefined;
-      }
-      const loadDelay = consumeContentScriptLoadDelay();
-      if(loadDelay > 0){
-        CheckVideoCurrentTime(loadDelay);
-      }
+  if(isCaptionDataFetching){return undefined;}
+  isCaptionDataFetching = true;
+  try {
+    const videoId = GetVideoId();
+    if(videoId == CURRENT_VIDEO_ID && !isForceFetch){return undefined;}
+    let json = undefined;
+    const storageResult = await getStorageSync(CAPTION_FETCH_STORAGE_KEYS);
+    if(!isSpeechEnabled(storageResult)) {
       return undefined;
-    } finally {
-      isCaptionDataFetching = false;
     }
+    try {
+      json = await FetchCaptionDataFromPlayerResponse();
+      if(shouldSkipCaptionFetchByLocale(storageResult)){
+        clearCaptionData();
+        return undefined;
+      }
+    }catch(err){
+      console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
+    }
+    if (json === undefined) {
+      json = await FetchCaptionDataFromTimedText(videoId);
+      if(json === undefined) {
+        clearCaptionData();
+        return undefined;
+      }
+    }
+    applyFetchedCaptionData(json, videoId);
+    if (storageResult?.isSpeechWithoutSyncEnabled) {
+      SpeechAllWithoutSync();
+      return undefined;
+    }
+    const loadDelay = consumeContentScriptLoadDelay();
+    if(loadDelay > 0){
+      CheckVideoCurrentTime(loadDelay);
+    }
+    return undefined;
+  } finally {
+    isCaptionDataFetching = false;
+  }
 }
 
 function FormatTimeFromMillisecond(millisecond){
@@ -695,14 +695,14 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   checkCurrentVideoTimeTexts(currentTime, loadGapSecond, storageResult, videoElement);
 }
 
-// 	"https://www.youtube.com/api/timedtext" で始まるURLがリクエストされた場合に貯めておきます。
+// "https://www.youtube.com/api/timedtext" で始まるURLがリクエストされた場合に貯めておきます。
 // これの、tlang=ja  の部分を書き換えることで自動翻訳のものが取り出せる事になります。
 var accessUrlList = []; // アクセスされた timedtext のURLリスト
 var excludeAccessUrlList = []; // 以前の timedtext URL 生成で取得されるものについては保存しないようにするためこれを覚えておきます。
 function onUrlAccessed(url) {
-	if(url.includes('https://www.youtube.com/api/timedtext') && (!excludeAccessUrlList.includes(url))){
-		accessUrlList.push(url);
-	}
+  if(url.includes('https://www.youtube.com/api/timedtext') && (!excludeAccessUrlList.includes(url))){
+    accessUrlList.push(url);
+  }
 }
 
 async function doubleClickWithDelay(buttonElement) {
@@ -726,42 +726,42 @@ async function doubleClickWithDelay(buttonElement) {
     ariaPressed = buttonElement.getAttribute('aria-pressed');
   }
   if(ariaPressed != initialAriaPressed) {
-      buttonElement.click();
+    buttonElement.click();
   }
   await sleep(100);
 }
 
 let getTimedTextUrl_checkedVideoId = undefined;
 async function getTimedTextUrl(lang, videoId) {
-	let filteredAccessUrlList = filterTimedTextAccessUrls(accessUrlList, videoId);
-	if(filteredAccessUrlList.length <= 0) {
-		if(shouldSkipTimedTextCollection(videoId)) {
-			return undefined;
-		}
+  let filteredAccessUrlList = filterTimedTextAccessUrls(accessUrlList, videoId);
+  if(filteredAccessUrlList.length <= 0) {
+    if(shouldSkipTimedTextCollection(videoId)) {
+      return undefined;
+    }
     const button = getSubtitleButtonElement();
 
-		if(getTimedTextUrl_checkedVideoId !== videoId) {
-			await doubleClickWithDelay(button);
-			getTimedTextUrl_checkedVideoId = videoId;
+    if(getTimedTextUrl_checkedVideoId !== videoId) {
+      await doubleClickWithDelay(button);
+      getTimedTextUrl_checkedVideoId = videoId;
     }
-		for(var i = 0; i < 10; i++){
-			filteredAccessUrlList = filterTimedTextAccessUrls(accessUrlList, videoId);
-			if(filteredAccessUrlList.length > 0){
-				break;
-			}
-			await sleep(100);
-		}
-		if(filteredAccessUrlList.length <= 0){
-			console.log("CS: getTimedTextUrl() failed.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
-			return undefined;
-		}
-	}
-	// 現在 filteredAccessUrlList に保存されているURLのうち、最後の URL を取り出します。
-	let url = findLatestTimedTextUrl(filteredAccessUrlList, excludeAccessUrlList, videoId);
-	if(url === undefined) {
-		console.log("CS: getTimedTextUrl return undefined. url not found.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
-		return undefined;
-	}
+    for(var i = 0; i < 10; i++){
+      filteredAccessUrlList = filterTimedTextAccessUrls(accessUrlList, videoId);
+      if(filteredAccessUrlList.length > 0){
+        break;
+      }
+      await sleep(100);
+    }
+    if(filteredAccessUrlList.length <= 0){
+      console.log("CS: getTimedTextUrl() failed.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
+      return undefined;
+    }
+  }
+  // 現在 filteredAccessUrlList に保存されているURLのうち、最後の URL を取り出します。
+  let url = findLatestTimedTextUrl(filteredAccessUrlList, excludeAccessUrlList, videoId);
+  if(url === undefined) {
+    console.log("CS: getTimedTextUrl return undefined. url not found.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
+    return undefined;
+  }
   return setTimedTextLanguage(url, lang);
 }
 
@@ -787,9 +787,9 @@ chrome.runtime.onMessage.addListener(
     case "LoadBooleanSettings":
       LoadBooleanSettings();
       break;
-	case "url_accessed":
-		onUrlAccessed(message.url);
-		break;
+    case "url_accessed":
+      onUrlAccessed(message.url);
+      break;
     default:
       break;
     }
@@ -909,7 +909,6 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
 });
 
 function InitializeScreenObserver(){
-
   const screen = getMoviePlayerElement();
 
   // if screen is not on the page - return
@@ -919,16 +918,16 @@ function InitializeScreenObserver(){
 
   // prevents from speaking a remaining part of a speech when opening a new YouTube tab
   stopSpeechWithSpeakCheck(speechSynthesis);
-  
+
   // configuration of the screen observer
   const config = { attributes: true, subtree: true, attributeFilter: ['class', 'src']};
 
   screenObserver.observe(screen, config);
 
   // prevents from speaking a remaining part of a speech when changing tabs
-window.addEventListener("blur", function(event) {
-  if (paused) stopSpeechWithSpeakCheck(speechSynthesis);
-});
+  window.addEventListener("blur", function(event) {
+    if (paused) stopSpeechWithSpeakCheck(speechSynthesis);
+  });
 }
 
 let paused = false;
@@ -941,7 +940,7 @@ const screenObserver = new MutationObserver(function (mutations) {
     // cancels speechSynthesis if url was changed
     if (mutation.attributeName === "src"){
       stopSpeechWithSpeakCheck(speechSynthesis);
-        return;
+      return;
     }
 
     if (mutation.target.classList.contains("paused-mode")) {
@@ -949,10 +948,10 @@ const screenObserver = new MutationObserver(function (mutations) {
         return;
       }
       paused = true;
-	  if(speechSynthesis.speaking) {
-		speechSynthesis.pause();
-	  }
-      pauseTime = mutation.target.querySelector(YOUTUBE_UI_SELECTORS.videoStreamSelector).currentTime;   
+      if(speechSynthesis.speaking) {
+        speechSynthesis.pause();
+      }
+      pauseTime = mutation.target.querySelector(YOUTUBE_UI_SELECTORS.videoStreamSelector).currentTime;
     }
     if (mutation.target.classList.contains("playing-mode")) {
       if (!paused) {
