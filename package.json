@@ -1,0 +1,7 @@
+{
+  "name": "captionspeaker",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}

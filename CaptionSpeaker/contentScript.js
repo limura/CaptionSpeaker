@@ -11,6 +11,94 @@ var originalVolume = undefined;
 var ContentScriptLoadTime = new Date();
 var speakTargetUrl = undefined;
 
+const YOUTUBE_UI_SELECTORS = {
+  configScriptXPath: "//script[@nonce and contains(text(),'INNERTUBE_API_KEY')]",
+  initialPlayerResponseXPath: "//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]",
+  subtitlesButtonXPath: "//button[contains(@class,'ytp-subtitles-button')]|//button[@class='ytmClosedCaptioningButtonButton']",
+  videoXPath: "//video[contains(@class,'html5-main-video')]",
+  volumeXPath: "//span[@class='ytp-volume-area']/div[@aria-valuenow]/@aria-valuenow",
+  moviePlayerSelector: "#movie_player[class*='html5-video-player']",
+  playPauseButtonSelector: "button.player-control-play-pause-icon",
+  videoAdsSelector: "#ytd-player .video-ads",
+  videoStreamSelector: ".video-stream"
+};
+
+const CAPTION_FETCH_STORAGE_KEYS = ["isEnabled", "isDisableSpeechIfSameLocaleVideo", "isSpeechWithoutSyncEnabled"];
+const VIDEO_TIME_CHECK_STORAGE_KEYS = ["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification", "isSpeechWithoutSyncEnabled"];
+
+function getFirstSnapshotNode(xpath, contextNode = document){
+  return document.evaluate(xpath, contextNode, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
+}
+
+function getMoviePlayerElement(){
+  return document.querySelector(YOUTUBE_UI_SELECTORS.moviePlayerSelector);
+}
+
+function getMainVideoElement(){
+  return getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.videoXPath);
+}
+
+function getSubtitleButtonElement(){
+  return getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.subtitlesButtonXPath);
+}
+
+function isSpeechEnabled(storageResult){
+  return storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
+}
+
+function filterTimedTextAccessUrls(urlList, videoId) {
+  return urlList.filter((url) => url.includes(`/timedtext?v=${videoId}`));
+}
+
+function findLatestTimedTextUrl(urlList, excludedUrls, videoId) {
+  let latestUrl = undefined;
+  for (const currentUrl of urlList) {
+    if (!currentUrl) {
+      continue;
+    }
+    if (excludedUrls.includes(currentUrl)) {
+      continue;
+    }
+    if (!currentUrl.includes(`/timedtext?v=${videoId}`)) {
+      continue;
+    }
+    latestUrl = currentUrl;
+  }
+  return latestUrl;
+}
+
+function setTimedTextLanguage(url, lang) {
+  try {
+    const urlObj = new URL(url);
+    urlObj.searchParams.set("tlang", lang);
+    return urlObj.toString();
+  } catch (e) {
+    console.error("Invalid URL:", url, e);
+    return url;
+  }
+}
+
+function shouldSkipTimedTextCollection(videoId) {
+  if (document.querySelectorAll(YOUTUBE_UI_SELECTORS.videoAdsSelector)[0]?.childNodes?.length > 0) {
+    return true;
+  }
+  if (document.querySelector(YOUTUBE_UI_SELECTORS.playPauseButtonSelector) == undefined) {
+    if (getMainVideoElement()?.paused == true) {
+      return true;
+    }
+  }
+  const button = getSubtitleButtonElement();
+  if (!button) {
+    return true;
+  }
+  if (button.getAttribute("aria-pressed") == null) {
+    return true;
+  }
+  return false;
+}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 function getStorageSync(keys = null){
   return new Promise(resolve => {
     chrome.storage.sync.get(keys, resolve);
@@ -70,7 +158,8 @@ async function GetYoutbeiV1PlayerData(){
   // ytcfg.obfuscatedData_ を書いていてくれないと動きません。
   // これは完全に youtube の人がどうそれを JavaScript コードに落とし込んでいるかに依存しているため、
   // 正直言って全然、全く、完膚なきまでに、よろしくありません。
-  const ytCfgJSON = document.evaluate("//script[@nonce and contains(text(),'INNERTUBE_API_KEY')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0).innerText.replace(/^[\s\S]*ytcfg\.set\({/g,'{').replace(/}\);\s*window\.ytcfg\.obfuscatedData_[\s\S]*/,'}');
+  const ytCfgScript = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.configScriptXPath);
+  const ytCfgJSON = ytCfgScript?.innerText?.replace(/^[\s\S]*ytcfg\.set\({/g,'{').replace(/}\);\s*window\.ytcfg\.obfuscatedData_[\s\S]*/,'}');
   if(typeof ytCfgJSON != "string" || ytCfgJSON.length <= 0){
     console.log("ERROR: ytcfg.set({\"CLIENT_CANARY_STATE... not found");
     return undefined;
@@ -90,7 +179,7 @@ async function GetYoutbeiV1PlayerData(){
     const resData = await res.json();
     if(!(resData?.captions?.playerCaptionsTracklistRenderer?.captionTracks)) {
       //console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
-      const ytInitialPlayerResponseElement = document.evaluate("//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
+      const ytInitialPlayerResponseElement = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.initialPlayerResponseXPath);
       if(!ytInitialPlayerResponseElement){
         //console.log("ytInitialPlayerResponse not found.");
         return undefined;
@@ -169,92 +258,115 @@ async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
   }
 }
 
+function clearCaptionData(){
+  captionData = {};
+}
+
+function updateCaptionFetchMetadata(playerResponse){
+  const lengthSeconds = VideoLengthSecondsFromPlayerResponse(playerResponse);
+  if(lengthSeconds > 0){
+    videoLengthSeconds = lengthSeconds;
+  }
+  guessedOriginalCaptionLanguage = GuessVideoAutoTransrateOriginalLanguage(playerResponse);
+}
+
+function shouldSkipCaptionFetchByLocale(storageResult){
+  return guessedOriginalCaptionLanguage == playLocale && storageResult?.isDisableSpeechIfSameLocaleVideo;
+}
+
+async function FetchCaptionDataFromPlayerResponse(){
+  const playerResponse = await GetYoutbeiV1PlayerData();
+  updateCaptionFetchMetadata(playerResponse);
+  const url = await GetCaptionDataUrl(playerResponse);
+  return FetchCaptionData_old(url);
+}
+
+async function FetchCaptionDataFromTimedText(videoId){
+  const url = await getTimedTextUrl(playLocale, videoId);
+  if(url === undefined) {
+    return undefined;
+  }
+  let response;
+  try {
+    excludeAccessUrlList.push(url);
+    response = await fetch(url);
+  }catch(error) {
+    console.log(`CS: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
+    return undefined;
+  }
+  if(!(response && response.ok)) {
+    console.log(`CS: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
+    if(response?.text){
+      const text = await response.text();
+      console.log("CS: response.text():", text);
+    }
+    console.log("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
+    return undefined;
+  }
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  }catch(error){
+    console.log('CS: captionData JSON decode failed. text:', text, "url:", url);
+    return undefined;
+  }
+}
+
+function applyFetchedCaptionData(json, videoId){
+  captionData = CaptionDataToTimeDict(json);
+  CURRENT_VIDEO_ID = videoId;
+}
+
+function consumeContentScriptLoadDelay(){
+  if(!ContentScriptLoadTime){
+    return 0.0;
+  }
+  const now = new Date();
+  const delay = (now.getTime() - ContentScriptLoadTime.getTime()) / 1000.0;
+  ContentScriptLoadTime = undefined;
+  return delay;
+}
+
 async function FetchCaptionData(isForceFetch = false){
     if(isCaptionDataFetching){return undefined;}
     isCaptionDataFetching = true;
-    //console.log("FetchCaptionData start");
-    const videoId = GetVideoId();
-    if(videoId == CURRENT_VIDEO_ID && !isForceFetch){isCaptionDataFetching = false;return undefined;}
-	let json = undefined;
-	const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfSameLocaleVideo","isSpeechWithoutSyncEnabled"]);
-  if(storageResult?.isEnabled == false) {
-    isCaptionDataFetching = false;
-    return undefined;
-  }
-	try {
-		const player_response_obj = await GetYoutbeiV1PlayerData();
-		// player_response_obj に色々入っている値を取り出しておきます
-		let lengthSeconds = VideoLengthSecondsFromPlayerResponse(player_response_obj);
-		if(lengthSeconds > 0){ videoLengthSeconds = lengthSeconds; }
-		guessedOriginalCaptionLanguage = GuessVideoAutoTransrateOriginalLanguage(player_response_obj);
-
-		if(guessedOriginalCaptionLanguage == playLocale && storageResult && storageResult.isDisableSpeechIfSameLocaleVideo){
-			captionData = {};
-			isCaptionDataFetching = false;
-			return;
-		}
-
-		const url = await GetCaptionDataUrl(player_response_obj);
-		json = await FetchCaptionData_old(url, isForceFetch);
-	}catch(err){
-		console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
-	}
-	if (json === undefined) {
-		//console.log(`旧方式では駄目そうなので、新方式を試します。`);
-		// 旧方式では駄目そうなので、新方式を試します
-		let url = await getTimedTextUrl(playLocale, videoId);
-		if(url === undefined) {
-			captionData = {};
-			isCaptionDataFetching = false;
-			return;
-		}
-		let response;
-		try {
-			//console.log("CS: captionData fetch(2). push excludeAccessUrlList:", url);
-			excludeAccessUrlList.push(url);
-			response = await fetch(url);
-		}catch(error) {
-			console.log(`CS: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
-			captionData = {};
-			isCaptionDataFetching = false;
-			return;
-		}
-		if(response && response.ok) {
-			let text = await response.text();
-			try {
-				json = JSON.parse(text);
-			}catch(error){
-				console.log('CS: captionData JSON decode failed. text:', text, "url:", url);
-				captionData = {};
-				isCaptionDataFetching = false;
-				return;
-			}
-		}else{
-			console.log(`CS: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
-			text = await response.text();
-			console.log("CS: response.text():", text);
-			console.log("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
-			captionData = {};
-			isCaptionDataFetching = false;
-			return;
-		}
-	}
-    captionData = CaptionDataToTimeDict(json);
-    CURRENT_VIDEO_ID = videoId;
-    //console.log("captionData updated", videoId, captionData);
-    if (storageResult && storageResult.isSpeechWithoutSyncEnabled) {
-      SpeechAllWithoutSync();
-    } else {
-      // 最初の一回目のCaptionDataの読み込み時には、読み込みが終わるまでの時間分を考慮させます
-      if (ContentScriptLoadTime) {
-        const now = new Date();
-        const delay = (now.getTime() - ContentScriptLoadTime.getTime()) / 1000.0;
-        ContentScriptLoadTime = undefined;
-        //console.log("delay:", delay);
-        CheckVideoCurrentTime(delay);
+    try {
+      const videoId = GetVideoId();
+      if(videoId == CURRENT_VIDEO_ID && !isForceFetch){return undefined;}
+	  let json = undefined;
+	  const storageResult = await getStorageSync(CAPTION_FETCH_STORAGE_KEYS);
+      if(!isSpeechEnabled(storageResult)) {
+        return undefined;
       }
+	  try {
+		json = await FetchCaptionDataFromPlayerResponse();
+        if(shouldSkipCaptionFetchByLocale(storageResult)){
+          clearCaptionData();
+          return undefined;
+        }
+	  }catch(err){
+		console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
+	  }
+	  if (json === undefined) {
+        json = await FetchCaptionDataFromTimedText(videoId);
+        if(json === undefined) {
+          clearCaptionData();
+          return undefined;
+        }
+	  }
+      applyFetchedCaptionData(json, videoId);
+      if (storageResult?.isSpeechWithoutSyncEnabled) {
+        SpeechAllWithoutSync();
+        return undefined;
+      }
+      const loadDelay = consumeContentScriptLoadDelay();
+      if(loadDelay > 0){
+        CheckVideoCurrentTime(loadDelay);
+      }
+      return undefined;
+    } finally {
+      isCaptionDataFetching = false;
     }
-    isCaptionDataFetching = false;
 }
 
 function FormatTimeFromMillisecond(millisecond){
@@ -271,7 +383,7 @@ function FormatTimeFromMillisecond(millisecond){
 }
 
 function CheckCaptionIsDisplaying(){
-  return document.evaluate("//button[contains(@class,'ytp-subtitles-button')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0)?.getAttribute('aria-pressed') == "true";
+  return getSubtitleButtonElement()?.getAttribute('aria-pressed') == "true";
 }
 
 // player_response から .microformat.playerMicroformatRenderer.lengthSeconds を取り出します
@@ -331,44 +443,33 @@ function UpdatePlayLocale(locale){
   }
 }
 
+function findSelectedVoice(voiceList, lang, voiceName){
+  for(const voice of voiceList){
+    if(voice.lang == lang && voice.name == voiceName){
+      return voice;
+    }
+  }
+  return undefined;
+}
+
+function getVoiceParameter(value, fallback){
+  return value ? value : fallback;
+}
+
 function StorageResultToVoiceSettings(result){
   let lang = result.lang;
   let voiceName = result.voice;
   let voiceList = speechSynthesis.getVoices();
-  var isStopIfNewSpeech = false;
-  var voicePitch = 1.0;
-  var voiceRate = 1.6;
-  var voiceVolume = 1.0;
-  var voiceVoice = undefined;
-  for(voice of voiceList){
-    if(voice.lang == lang && voice.name == voiceName){
-      voiceVoice = voice;
-      UpdatePlayLocale(lang);
-    }
-  }
-  let pitch = result.pitch;
-  if(pitch){
-    voicePitch = pitch;
-  }
-  let rate = result.rate;
-  if(rate){
-    voiceRate = rate;
-  }
-  let volume = result.volume;
-  if(volume){
-    voiceVolume = volume;
-  }
-  if(result?.isStopIfNewSpeech){
-    isStopIfNewSpeech = true;
-  }else{
-    isStopIfNewSpeech = false;
+  const voiceVoice = findSelectedVoice(voiceList, lang, voiceName);
+  if(voiceVoice){
+    UpdatePlayLocale(lang);
   }
   return {
-    voicePitch: voicePitch,
-    voiceRate: voiceRate,
-    voiceVolume: voiceVolume,
+    voicePitch: getVoiceParameter(result.pitch, 1.0),
+    voiceRate: getVoiceParameter(result.rate, 1.6),
+    voiceVolume: getVoiceParameter(result.volume, 1.0),
     voiceVoice: voiceVoice,
-    isStopIfNewSpeech: isStopIfNewSpeech,
+    isStopIfNewSpeech: result?.isStopIfNewSpeech ? true : false,
   };
 }
 
@@ -377,7 +478,7 @@ function StorageResultToVoiceSettings(result){
 // 読み出せなかった場合はその値を返します。
 // 返却される値は 0 から 1  までの値であることを期待して良いです。
 function GetYtpVolumePanelValue(fallbackVolume){
-  const ytpVolumePanelCurrentValue = document.evaluate("//span[@class='ytp-volume-area']/div[@aria-valuenow]/@aria-valuenow", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0)?.value;
+  const ytpVolumePanelCurrentValue = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.volumeXPath)?.value;
   if(ytpVolumePanelCurrentValue){
     return Math.min(1, Math.max(0, ytpVolumePanelCurrentValue / 100.0));
   }
@@ -404,45 +505,66 @@ function volumeRecover(videoElement, originalVolume){
   }
 }
 
+function normalizeSpeechText(text){
+  return text.replace(/(\n)/g, () => " ");
+}
+
+function applyVoiceSettingsToUtterance(utterance, setting){
+  if(setting.voiceVoice){
+    utterance.voice = setting.voiceVoice;
+    utterance.lang = utterance.voice.lang;
+  }
+  utterance.pitch = setting.voicePitch;
+  utterance.rate = setting.voiceRate;
+  utterance.volume = setting.voiceVolume;
+}
+
+function attachVolumeRecoveryHandlers(utterance, storageResult, videoElement){
+  if(!(storageResult.isOverrideOriginalVolumeEnabled && originalVolume && videoElement)){
+    return;
+  }
+  const targetVolume = GetYtpVolumePanelValue(originalVolume);
+  volumeOverride(videoElement, targetVolume, storageResult.overrideOriginalVolumeMagnification);
+  const recoverFunc = () => {
+    const targetVolume = GetYtpVolumePanelValue(originalVolume);
+    volumeRecover(videoElement, targetVolume);
+  };
+  utterance.onend = recoverFunc;
+  utterance.onerror = recoverFunc;
+  utterance.onpause = recoverFunc;
+}
+
+function resumeSpeechIfMoviePlayerActive(){
+  const screen = getMoviePlayerElement();
+  if (screen?.classList.contains("playing-mode")) {
+    paused = false;
+    speechSynthesis.resume();
+  }
+}
+
+function buildCaptionSpeechText(captionData){
+  return Object.values(captionData).reduce((acc, caption) => acc + " " + caption.segment, "");
+}
+
 function AddSpeechQueue(text, storageResult, videoElement){
-  var textVoice = text.replace(/(\n)/g, x => {return " "; })
+  var textVoice = normalizeSpeechText(text);
   // console.log(textVoice)
 //console.log("CS: AddSpeechQueue", textVoice, videoElement, storageResult);
   const utt = new SpeechSynthesisUtterance(textVoice);
   const setting = StorageResultToVoiceSettings(storageResult);
-  if(setting.voiceVoice){
-    utt.voice = setting.voiceVoice;
-    utt.lang = utt.voice.lang;
-  }
-  utt.pitch = setting.voicePitch;
-  utt.rate = setting.voiceRate;
-  utt.volume = setting.voiceVolume;
+  applyVoiceSettingsToUtterance(utt, setting);
   utt.onerror = function(event){
     if(event.error == "interrupted") return;
     console.log("SpeechSynthesisUtterance Event onError", event);
   };
-  if(storageResult.isOverrideOriginalVolumeEnabled && originalVolume && videoElement){
-    const targetVolume = GetYtpVolumePanelValue(originalVolume);
-    volumeOverride(videoElement, targetVolume, storageResult.overrideOriginalVolumeMagnification);
-    const recoverFunc = (event) => {
-      const targetVolume = GetYtpVolumePanelValue(originalVolume);
-      volumeRecover(videoElement, targetVolume);
-    };
-    utt.onend = recoverFunc;
-    utt.onerror = recoverFunc;
-    utt.onpause = recoverFunc;
-  }
+  attachVolumeRecoveryHandlers(utt, storageResult, videoElement);
   if(setting.isStopIfNewSpeech){
     stopSpeechWithSpeakCheck(speechSynthesis);
   }
 
   // prevents from no speaking when switching tabs
   // it seems better to also check if speechSynthesis.paused, but for some reasons it returns false even when it's paused
-  const screen = document.querySelector("#movie_player[class*='html5-video-player']");
-  if (screen.classList.contains("playing-mode")) {
-    paused = false;
-    speechSynthesis.resume();
-  }
+  resumeSpeechIfMoviePlayerActive();
   startSpeech(speechSynthesis, utt);
 }
 
@@ -489,11 +611,10 @@ async function IsTargetUrl(){
 }
 
 async function SpeechAllWithoutSync() {
-  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"]);
+  const storageResult = await getStorageSync(VIDEO_TIME_CHECK_STORAGE_KEYS);
   if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
-  const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
-  if(!isEnabled){return;}
-  let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
+  if(!isSpeechEnabled(storageResult)){return;}
+  let videoElement = getMainVideoElement();
   if(!videoElement){
     console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
     return;
@@ -509,47 +630,69 @@ async function SpeechAllWithoutSync() {
     //UpdateCaptionData();
     return;
   }
-  var textVoice = ""
-  for (let key in captionData) {
-    textVoice = textVoice + " " + captionData[key].segment
-  }
+  const textVoice = buildCaptionSpeechText(captionData);
   stopSpeechWithSpeakCheck(speechSynthesis);
   AddSpeechQueue(textVoice, storageResult, videoElement);
 }
-// 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
-async function CheckVideoCurrentTime(loadGapSecond = 0.0){
-  //console.log("CaptionSpeaker checking location", location.href);
-  const storageResult = await getStorageSync(["isEnabled", "isDisableSpeechIfChaptionDisabled", "lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification","isSpeechWithoutSyncEnabled"]);
-  if(!IsTargetUrlWithOption(location.href, storageResult)){return;}
-  const isEnabled = storageResult?.isEnabled || typeof storageResult?.isEnabled == "undefined";
-  if(!isEnabled){return;}
-  if (storageResult.isSpeechWithoutSyncEnabled) return;
-  let videoElement = document.evaluate("//video[contains(@class,'html5-main-video')]", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)?.snapshotItem(0);
-  if(!videoElement){
-    console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
-    return;
-  }
-  // このタイミングで元動画の音量設定を video 側から取得しておきます。
-  // ただ、このタイミングでしかこれは取得していないため、この取得したタイミングより後に
-  // 音量調整を手動で行われると誤動作するはずです。
-  // (GetYtpVolumePanelValue() 辺りでこの問題の解消を図っています)
+
+function ensureOriginalVolume(videoElement){
   if(typeof(originalVolume) == "undefined"){
     originalVolume = videoElement.volume;
   }
-  let currentTime = videoElement.currentTime;
-  let duration = videoElement.duration;
-  if(isNaN(duration)){return;}
-  if(!IsValidVideoDuration(duration, captionData)){
-    //console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
-    UpdateCaptionData();
-    return;
+}
+
+function getVideoPlaybackState(videoElement){
+  const currentTime = videoElement.currentTime;
+  const duration = videoElement.duration;
+  return {
+    currentTime,
+    duration,
+    isDurationKnown: !isNaN(duration)
+  };
+}
+
+function buildTimeTextsToCheck(currentTime, loadGapSecond){
+  const timeTexts = [];
+  for(let gap = loadGapSecond; gap >= 0; gap -= 1){
+    timeTexts.push(FormatTimeFromMillisecond((currentTime - gap) * 1000));
   }
-  for(let gap = loadGapSecond; gap >= 0; gap-=1){
-    let timeText = FormatTimeFromMillisecond((currentTime - gap) * 1000);
+  return timeTexts;
+}
+
+function shouldCheckCurrentVideo(storageResult){
+  if(!IsTargetUrlWithOption(location.href, storageResult)){return false;}
+  if(!isSpeechEnabled(storageResult)){return false;}
+  if(storageResult.isSpeechWithoutSyncEnabled){return false;}
+  return true;
+}
+
+function checkCurrentVideoTimeTexts(currentTime, loadGapSecond, storageResult, videoElement){
+  const timeTexts = buildTimeTextsToCheck(currentTime, loadGapSecond);
+  for(const timeText of timeTexts){
     if(prevCheckVideoTimeText == timeText){return;}
     prevCheckVideoTimeText = timeText;
     CheckAndSpeech(timeText, storageResult, videoElement);
   }
+}
+
+// 再生位置を video object の .currentTime から取得して、発話が必要そうなら発話させます
+async function CheckVideoCurrentTime(loadGapSecond = 0.0){
+  const storageResult = await getStorageSync(VIDEO_TIME_CHECK_STORAGE_KEYS);
+  if(!shouldCheckCurrentVideo(storageResult)){return;}
+  let videoElement = getMainVideoElement();
+  if(!videoElement){
+    console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
+    return;
+  }
+  ensureOriginalVolume(videoElement);
+  const playbackState = getVideoPlaybackState(videoElement);
+  if(!playbackState.isDurationKnown){return;}
+  const { currentTime, duration } = playbackState;
+  if(!IsValidVideoDuration(duration, captionData)){
+    UpdateCaptionData();
+    return;
+  }
+  checkCurrentVideoTimeTexts(currentTime, loadGapSecond, storageResult, videoElement);
 }
 
 // 	"https://www.youtube.com/api/timedtext" で始まるURLがリクエストされた場合に貯めておきます。
@@ -568,8 +711,6 @@ async function doubleClickWithDelay(buttonElement) {
   }
 
   let initialAriaPressed = buttonElement.getAttribute('aria-pressed');
-
-  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   // 必ず2回はクリックしてなにがなんでも字幕を読み取ってもらいます
   buttonElement.click();
@@ -592,52 +733,22 @@ async function doubleClickWithDelay(buttonElement) {
 
 let getTimedTextUrl_checkedVideoId = undefined;
 async function getTimedTextUrl(lang, videoId) {
-	let filteredAccessUrlList = accessUrlList.filter((url) => {
-		return url.includes(`/timedtext?v=${videoId}`);
-	});
+	let filteredAccessUrlList = filterTimedTextAccessUrls(accessUrlList, videoId);
 	if(filteredAccessUrlList.length <= 0) {
-		// 広告の場合はなにもしないようにしたいので一応確認します。
-		if(document.querySelectorAll("#ytd-player .video-ads")[0]?.childNodes?.length > 0){
+		if(shouldSkipTimedTextCollection(videoId)) {
 			return undefined;
 		}
-    // 再生を開始していない場合、字幕のON/OFFボタン自体が表示されないためスキップします
-    if(document.querySelector('button.player-control-play-pause-icon') == undefined) {
-      if(document.querySelector('video')?.paused == true){
-        //console.log("CS: 再生開始していないようなので無視します");
-        return undefined;
-      }
-    }
-
-    const button = document.evaluate(
-			"//button[contains(@class,'ytp-subtitles-button')]|//button[@class='ytmClosedCaptioningButtonButton']",
-			document,
-			null,
-			XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-			null
-		)?.snapshotItem(0);
-    if(!button) {
-      //console.log("CS: 字幕ボタンがないので無視します", button);
-      return undefined;
-    }
-
-    // 字幕ボタンが押しても効果がなさそうな場合も何もしないようにしたいので、確認します。
-		if(button.getAttribute('aria-pressed') == null){
-      //console.log("CS: 押せない字幕ボタンだった(つまり字幕が設定されていない動画の)ようなので無視します");
-			return undefined;
-		}
+    const button = getSubtitleButtonElement();
 
 		if(getTimedTextUrl_checkedVideoId !== videoId) {
 			await doubleClickWithDelay(button);
 			getTimedTextUrl_checkedVideoId = videoId;
     }
 		for(var i = 0; i < 10; i++){
-			filteredAccessUrlList = accessUrlList.filter((url) => {
-				return url.includes(`/timedtext?v=${videoId}`);
-			});
+			filteredAccessUrlList = filterTimedTextAccessUrls(accessUrlList, videoId);
 			if(filteredAccessUrlList.length > 0){
 				break;
 			}
-			const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 			await sleep(100);
 		}
 		if(filteredAccessUrlList.length <= 0){
@@ -646,36 +757,12 @@ async function getTimedTextUrl(lang, videoId) {
 		}
 	}
 	// 現在 filteredAccessUrlList に保存されているURLのうち、最後の URL を取り出します。
-	let url = undefined;
-	for(let index = 0; index < filteredAccessUrlList.length; index += 1){
-		let currentUrl = filteredAccessUrlList[index];
-		if(!currentUrl) {
-			continue;
-		}
-		if(excludeAccessUrlList.includes(currentUrl)){
-			continue;
-		}
-		if(!currentUrl.includes(`/timedtext?v=${videoId}`)){
-			continue;
-		}
-		url = currentUrl;
-	}
+	let url = findLatestTimedTextUrl(filteredAccessUrlList, excludeAccessUrlList, videoId);
 	if(url === undefined) {
 		console.log("CS: getTimedTextUrl return undefined. url not found.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
 		return undefined;
 	}
-    try {
-        const urlObj = new URL(url);
-        const params = urlObj.searchParams;
-
-        // tlang を置換または追加
-        params.set('tlang', lang);
-
-        return urlObj.toString();
-    } catch (e) {
-        console.error("Invalid URL:", url, e);
-        return url; // パースできなかった場合は元の文字列を返す
-    }
+  return setTimedTextLanguage(url, lang);
 }
 
 function UpdateCaptionData(){
@@ -823,7 +910,7 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
 
 function InitializeScreenObserver(){
 
-  const screen = document.querySelector("#movie_player[class*='html5-video-player']");
+  const screen = getMoviePlayerElement();
 
   // if screen is not on the page - return
   if (!screen){
@@ -865,7 +952,7 @@ const screenObserver = new MutationObserver(function (mutations) {
 	  if(speechSynthesis.speaking) {
 		speechSynthesis.pause();
 	  }
-      pauseTime = mutation.target.querySelector(".video-stream").currentTime;   
+      pauseTime = mutation.target.querySelector(YOUTUBE_UI_SELECTORS.videoStreamSelector).currentTime;   
     }
     if (mutation.target.classList.contains("playing-mode")) {
       if (!paused) {
@@ -873,7 +960,7 @@ const screenObserver = new MutationObserver(function (mutations) {
       }
       paused = false;
       // resumes if the time before and after the pause differs by less than 1 sec, or if undefined (videoElement is not found)
-      if (Math.abs(mutation.target.querySelector(".video-stream").currentTime - pauseTime) > 1){
+      if (Math.abs(mutation.target.querySelector(YOUTUBE_UI_SELECTORS.videoStreamSelector).currentTime - pauseTime) > 1){
         stopSpeechWithSpeakCheck(speechSynthesis);
       }
       else {
