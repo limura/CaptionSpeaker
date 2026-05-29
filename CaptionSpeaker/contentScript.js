@@ -213,12 +213,29 @@ async function GetCaptionDataUrl(player_response_obj){
   return origUrl + "&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=" + playLocale;
 }
 
+// fetch する前に対象URLが youtube.com のものである事を確認します。
+// player_response 等の外部由来データに含まれるURLを無検証でfetchすると、
+// 攻撃者が用意したページからリクエストフォージェリ(SSRF的な挙動)を誘発される
+// 恐れがあるため、youtube.com 以外へのアクセスはここで拒否します。(F-4)
+function IsYoutubeUrl(url){
+  try {
+    const u = new URL(url, location.href);
+    return u.protocol === "https:" && (u.hostname === "youtube.com" || u.hostname.endsWith(".youtube.com"));
+  } catch(e) {
+    return false;
+  }
+}
+
 var isCaptionDataFetching = false;
 async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
   try {
     const url = captionDataUrl;
     if(!url){
       //isCaptionDataFetching = false;
+      return undefined;
+    }
+    if(!IsYoutubeUrl(url)){
+      console.log("CS: refuse to fetch non-youtube url:", url);
       return undefined;
     }
     if(excludeAccessUrlList.includes(url)){
@@ -284,6 +301,10 @@ async function FetchCaptionDataFromPlayerResponse(){
 async function FetchCaptionDataFromTimedText(videoId){
   const url = await getTimedTextUrl(playLocale, videoId);
   if(url === undefined) {
+    return undefined;
+  }
+  if(!IsYoutubeUrl(url)){
+    console.log("CS: refuse to fetch non-youtube timedtext url:", url);
     return undefined;
   }
   if(excludeAccessUrlList.includes(url)){
