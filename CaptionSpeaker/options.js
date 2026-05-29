@@ -59,7 +59,7 @@ function createSelectElement(nameArray, selectorId, onChangeFunction){
   for(let name of nameArray){
     let optionElement = document.createElement("option");
     optionElement.value = name;
-    optionElement.innerHTML = name;
+    optionElement.textContent = name;
     selectElement.appendChild(optionElement);
   }
   selectElement.onchange = function(){
@@ -187,9 +187,9 @@ function saveButtonClicked(voices, savedInformationElement){
   });
   chrome.runtime.sendMessage({"type": "SettingsUpdated"});
 
-  savedInformationElement.innerHTML = "saved!";
+  savedInformationElement.textContent = "saved!";
   setTimeout(function(){
-    savedInformationElement.innerHTML = "";
+    savedInformationElement.textContent = "";
   }, 1000);
 }
 
@@ -226,7 +226,7 @@ function loadSettings(voices){
       rate.max = 10;
     }
     rate.value = rateValue;
-    document.getElementById("rateValue").innerHTML = rateValue;
+    document.getElementById("rateValue").textContent = rateValue;
   }
   if("volume" in storage){
     document.getElementById("volume").value = storage.volume;
@@ -252,7 +252,7 @@ function loadSettings(voices){
   if("overrideOriginalVolumeMagnification" in storage){
     const mag = Math.max(0, Math.min(1, storage.overrideOriginalVolumeMagnification));
     document.getElementById("overrideOriginalVolumeMagnification").value = mag;
-    document.getElementById("overrideOriginalVolumeMagnificationValue").innerHTML = mag;
+    document.getElementById("overrideOriginalVolumeMagnificationValue").textContent = mag;
   }
   });
 }
@@ -264,7 +264,7 @@ function clearSettings(){
 
 function createVoiceSelectElement(parentElement, voices, targetLang){
   let voiceNames = getVoiceNames(filterVoiceForLang(voices, targetLang));
-  parentElement.innerHTML = '';
+  parentElement.textContent = '';
   parentElement.appendChild(createSelectElement(voiceNames, "voice", function(element){}));
 }
 
@@ -272,10 +272,10 @@ function initValueSliderWatcher(inputIdentity, valueIdentity){
   let input = document.getElementById(inputIdentity);
   let value = document.getElementById(valueIdentity);
   input.addEventListener('input', () => {
-    value.innerHTML = input.value;
+    value.textContent = input.value;
   });
   input.addEventListener('change', () => {
-    value.innerHTML = input.value;
+    value.textContent = input.value;
   });
 }
 
@@ -292,7 +292,7 @@ function initRateMaxStrechExtension(rateId, valueId, toggleId, warningId){
       warning.style.display = "none";
       if(rate.value > 2){
         rate.value = 2;
-        value.innerHTML = "2";
+        value.textContent = "2";
       }
       rate.max = 2;
     }
@@ -304,7 +304,7 @@ function init(){
   let voices = getVoiceList(speechSynthesis);
   let languageNameArray = ["DEFAULT"].concat(getVoiceLangueges(voices));
   let langElement = document.getElementById("langSelector");
-  langElement.innerHTML = '';
+  langElement.textContent = '';
   langElement.appendChild(createSelectElement(languageNameArray, "lang", function(element){
     let index = element.selectedIndex;
     let lang = element.options[index].value;
