@@ -825,7 +825,7 @@ async function CheckPlayLocaleUpdate(){
   let lang = storageResult.lang;
   let voiceName = storageResult.voice;
   let voiceList = speechSynthesis.getVoices();
-  for(voice of voiceList){
+  for(const voice of voiceList){
     if(voice.lang == lang && voice.name == voiceName){
       let l = lang?.replace(/-.*$/, '');
       if(l?.length > 0 && playLocale != l){

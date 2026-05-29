@@ -74,14 +74,14 @@ chrome.commands.onCommand.addListener(function(command) {
   switch(command){
   case "enableEvent":
     chrome.tabs.query({"active": true}, (tabs) => {
-      for(i in tabs){
+      for(const i in tabs){
         EnableSpeechSetting(tabs[i].id);
       }
     });
     break;
   case "disableEvent":
     chrome.tabs.query({"active": true}, (tabs) => {
-      for(i in tabs){
+      for(const i in tabs){
         DisableSpeechSetting(tabs[i].id);
       }
     });
