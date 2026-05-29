@@ -11,6 +11,14 @@ var originalVolume = undefined;
 var ContentScriptLoadTime = new Date();
 var speakTargetUrl = undefined;
 
+// デバッグ用ログ。既定では無効。(F-5)
+// 既定で console に視聴URLや字幕内容を出力すると情報露出になり得るため、
+// 通常は出力しない。問題調査時は CS_DEBUG を true にすると詳細が出力される。
+const CS_DEBUG = false;
+function debugLog(){
+  if(CS_DEBUG){ console.log.apply(console, arguments); }
+}
+
 const YOUTUBE_UI_SELECTORS = {
   configScriptXPath: "//script[@nonce and contains(text(),'INNERTUBE_API_KEY')]",
   initialPlayerResponseXPath: "//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]",
@@ -73,7 +81,7 @@ function setTimedTextLanguage(url, lang) {
     urlObj.searchParams.set("tlang", lang);
     return urlObj.toString();
   } catch (e) {
-    console.error("Invalid URL:", url, e);
+    debugLog("Invalid URL:", url, e);
     return url;
   }
 }
@@ -144,7 +152,7 @@ function GenerateYoutbeiV1PlayerPostPayload(ytConfig){
     "videoId": videoId
   };
 
-  //console.log("GenerateYoutbeiV1PlayerPostPayload generate", payloadObj);
+  //debugLog("GenerateYoutbeiV1PlayerPostPayload generate", payloadObj);
   return JSON.stringify(payloadObj);
 }
 
@@ -161,7 +169,7 @@ async function GetYoutbeiV1PlayerData(){
   const ytCfgScript = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.configScriptXPath);
   const ytCfgJSON = ytCfgScript?.innerText?.replace(/^[\s\S]*ytcfg\.set\({/g,'{').replace(/}\);\s*window\.ytcfg\.obfuscatedData_[\s\S]*/,'}');
   if(typeof ytCfgJSON != "string" || ytCfgJSON.length <= 0){
-    console.log("ERROR: ytcfg.set({\"CLIENT_CANARY_STATE... not found");
+    debugLog("ERROR: ytcfg.set({\"CLIENT_CANARY_STATE... not found");
     return undefined;
   }
   try {
@@ -178,10 +186,10 @@ async function GetYoutbeiV1PlayerData(){
     });
     const resData = await res.json();
     if(!(resData?.captions?.playerCaptionsTracklistRenderer?.captionTracks)) {
-      //console.log("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
+      //debugLog("resData has no captionTracks. now try get player_response from ytInitialPlayerResponse", resData);
       const ytInitialPlayerResponseElement = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.initialPlayerResponseXPath);
       if(!ytInitialPlayerResponseElement){
-        //console.log("ytInitialPlayerResponse not found.");
+        //debugLog("ytInitialPlayerResponse not found.");
         return undefined;
       }
       const ytInitialPlayerResponseCode = ytInitialPlayerResponseElement.innerText.replace("var ytInitialPlayerResponse = ","").replace(/};var .*/, '}');
@@ -190,7 +198,7 @@ async function GetYoutbeiV1PlayerData(){
     }
     return resData;
   }catch(err){
-    console.log("GetYoutbeiV1PlayerData got error", err, ytCfgJSON);
+    debugLog("GetYoutbeiV1PlayerData got error", err, ytCfgJSON);
   }
   return undefined;
 }
@@ -208,7 +216,7 @@ async function GetCaptionDataUrl(player_response_obj){
 
   // なさそうなら、captionTracks の先頭の物から対象のロケールに書き換えた物を取得するようにします。
   let baseUrl = captionTracks[0]?.baseUrl;
-  if(!baseUrl){ console.log("can not get baseUrl", player_response_obj); return; }
+  if(!baseUrl){ debugLog("can not get baseUrl", player_response_obj); return; }
   let origUrl = baseUrl.replace(/,/g, "%2C");
   return origUrl + "&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=" + playLocale;
 }
@@ -235,7 +243,7 @@ async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
       return undefined;
     }
     if(!IsYoutubeUrl(url)){
-      console.log("CS: refuse to fetch non-youtube url:", url);
+      debugLog("CS: refuse to fetch non-youtube url:", url);
       return undefined;
     }
     if(excludeAccessUrlList.includes(url)){
@@ -244,18 +252,18 @@ async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
 
     let response;
     try {
-      //console.log("CS: captionData fetch(1). push excludeAccessUrlList:", url);
+      //debugLog("CS: captionData fetch(1). push excludeAccessUrlList:", url);
       excludeAccessUrlList.push(url);
       response = await fetch(url);
     }catch(error) {
-      //console.log(`fetch error. await fetch() failed. url: ${url}, error: ${error}`);
+      //debugLog(`fetch error. await fetch() failed. url: ${url}, error: ${error}`);
       //isCaptionDataFetching = false;
       return undefined;
     }
     if(response && response.ok) {
       // pass;
     }else{
-      //console.log(`fetch error. response.ok: ${response?.ok} url: ${url}`, response);
+      //debugLog(`fetch error. response.ok: ${response?.ok} url: ${url}`, response);
       //isCaptionDataFetching = false;
       return undefined;
     }
@@ -263,14 +271,14 @@ async function FetchCaptionData_old(captionDataUrl, isForceFetch = false){
     try {
       json = await response.json();
     }catch(error) {
-      //console.log(`json decode error: ${error}`);
+      //debugLog(`json decode error: ${error}`);
       //isCaptionDataFetching = false;
       return undefined;
     }
     if(!json){isCaptionDataFetching = false;return undefined;}
     return json;
   }catch(err){
-    console.log("FetchCaptionData got error:", err, window.location.href);
+    debugLog("FetchCaptionData got error:", err, window.location.href);
     //isCaptionDataFetching = false;
   }
 }
@@ -304,7 +312,7 @@ async function FetchCaptionDataFromTimedText(videoId){
     return undefined;
   }
   if(!IsYoutubeUrl(url)){
-    console.log("CS: refuse to fetch non-youtube timedtext url:", url);
+    debugLog("CS: refuse to fetch non-youtube timedtext url:", url);
     return undefined;
   }
   if(excludeAccessUrlList.includes(url)){
@@ -315,23 +323,23 @@ async function FetchCaptionDataFromTimedText(videoId){
     excludeAccessUrlList.push(url);
     response = await fetch(url);
   }catch(error) {
-    console.log(`CS: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
+    debugLog(`CS: fetch timedText error. fetch() failed. url: ${url}, error: ${error}`);
     return undefined;
   }
   if(!(response && response.ok)) {
-    console.log(`CS: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
+    debugLog(`CS: fetch timedText error. response.ok is false: ${response?.ok} url: ${url}`, response);
     if(response?.text){
       const text = await response.text();
-      console.log("CS: response.text():", text);
+      debugLog("CS: response.text():", text);
     }
-    console.log("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
+    debugLog("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
     return undefined;
   }
   const text = await response.text();
   try {
     return JSON.parse(text);
   }catch(error){
-    console.log('CS: captionData JSON decode failed. text:', text, "url:", url);
+    debugLog('CS: captionData JSON decode failed. text:', text, "url:", url);
     return undefined;
   }
 }
@@ -369,10 +377,10 @@ async function FetchCaptionData(isForceFetch = false){
         return undefined;
       }
     }catch(err){
-      console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
+      debugLog("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
     }
-    console.log("FetchCaptionData first try json:", json);
-    console.log("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
+    debugLog("FetchCaptionData first try json:", json);
+    debugLog("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
     if (json === undefined) {
       json = await FetchCaptionDataFromTimedText(videoId);
       if(json === undefined) {
@@ -432,7 +440,7 @@ function GuessVideoAutoTransrateOriginalLanguage(player_response){
 // 字幕のデータを後で使いやすいように加工しておきます。
 function CaptionDataToTimeDict(captionData){
   let events = captionData?.events;
-  if(!events){ console.log("CaptionDataToTimeDict(): error. events not found"); return; }
+  if(!events){ debugLog("CaptionDataToTimeDict(): error. events not found"); return; }
   let captionArray = events.map((obj)=>{
     let tStartMs = obj?.tStartMs;
     // 表示上は分割して表示されるのですが、最低1文字づつで分割されており
@@ -574,14 +582,14 @@ function buildCaptionSpeechText(captionData){
 
 function AddSpeechQueue(text, storageResult, videoElement){
   var textVoice = normalizeSpeechText(text);
-  // console.log(textVoice)
-//console.log("CS: AddSpeechQueue", textVoice, videoElement, storageResult);
+  // debugLog(textVoice)
+//debugLog("CS: AddSpeechQueue", textVoice, videoElement, storageResult);
   const utt = new SpeechSynthesisUtterance(textVoice);
   const setting = StorageResultToVoiceSettings(storageResult);
   applyVoiceSettingsToUtterance(utt, setting);
   utt.onerror = function(event){
     if(event.error == "interrupted") return;
-    console.log("SpeechSynthesisUtterance Event onError", event);
+    debugLog("SpeechSynthesisUtterance Event onError", event);
   };
   attachVolumeRecoveryHandlers(utt, storageResult, videoElement);
   if(setting.isStopIfNewSpeech){
@@ -597,7 +605,7 @@ function AddSpeechQueue(text, storageResult, videoElement){
 // 単純に秒単位で時間を確認して、前回読み上げた時間と変わっているのなら発話する、という事をします。
 function CheckAndSpeech(currentTimeText, storageResult, videoElement){
   if(captionData === undefined){return;}
-  if(!currentTimeText){ console.log("currentTimeText is nil"); return;}
+  if(!currentTimeText){ debugLog("currentTimeText is nil"); return;}
   if(currentTimeText == prevSpeakTime){ return;}
   if(storageResult.isDisableSpeechIfChaptionDisabled && !CheckCaptionIsDisplaying()){ return; }
   let caption = captionData[currentTimeText];
@@ -606,7 +614,7 @@ function CheckAndSpeech(currentTimeText, storageResult, videoElement){
     AddSpeechQueue(caption.segment, storageResult, videoElement);
     return;
   }
-  //console.log("no caption:", currentTimeText);
+  //debugLog("no caption:", currentTimeText);
 }
 
 function IsValidVideoDuration(duration, captionData){
@@ -642,7 +650,7 @@ async function SpeechAllWithoutSync() {
   if(!isSpeechEnabled(storageResult)){return;}
   let videoElement = getMainVideoElement();
   if(!videoElement){
-    console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
+    debugLog("CheckVideoCurrentTime videoElement is not found:", videoElement);
     return;
   }
   if(typeof(originalVolume) == "undefined"){
@@ -652,7 +660,7 @@ async function SpeechAllWithoutSync() {
   let duration = videoElement.duration;
   if(isNaN(duration)){return;}
   if(!IsValidVideoDuration(duration, captionData)){
-    console.log("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
+    debugLog("CheckVideoCurrentTime is not valid VideoDuration. currentTime:", currentTime, "duration:", duration, "captionData:", captionData);
     //UpdateCaptionData();
     return;
   }
@@ -707,7 +715,7 @@ async function CheckVideoCurrentTime(loadGapSecond = 0.0){
   if(!shouldCheckCurrentVideo(storageResult)){return;}
   let videoElement = getMainVideoElement();
   if(!videoElement){
-    console.log("CheckVideoCurrentTime videoElement is not found:", videoElement);
+    debugLog("CheckVideoCurrentTime videoElement is not found:", videoElement);
     return;
   }
   ensureOriginalVolume(videoElement);
@@ -778,14 +786,14 @@ async function getTimedTextUrl(lang, videoId) {
       await sleep(100);
     }
     if(filteredAccessUrlList.length <= 0){
-      console.log("CS: getTimedTextUrl() failed.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
+      debugLog("CS: getTimedTextUrl() failed.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
       return undefined;
     }
   }
   // 現在 filteredAccessUrlList に保存されているURLのうち、最後の URL を取り出します。
   let url = findLatestTimedTextUrl(filteredAccessUrlList, excludeAccessUrlList, videoId);
   if(url === undefined) {
-    console.log("CS: getTimedTextUrl return undefined. url not found.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
+    debugLog("CS: getTimedTextUrl return undefined. url not found.", "filteredAccessUrlList:", filteredAccessUrlList, "excludeAccessUrlList", excludeAccessUrlList, "accessUrlList", accessUrlList);
     return undefined;
   }
   return setTimedTextLanguage(url, lang);
@@ -804,7 +812,7 @@ async function LoadBooleanSettings(){
 }
 chrome.runtime.onMessage.addListener(
   function(message, sender, sendResponse){
-    //console.log("onMessage", message, sender, sendResponse);
+    //debugLog("onMessage", message, sender, sendResponse);
     switch(message.type){
     case "SettingsUpdated":
       LoadBooleanSettings();
@@ -828,7 +836,7 @@ var VideoTimeCheckTimerID = undefined;
 function StartVideoTimeChecker(){
   if(CURRENT_VIDEO_ID == GetVideoId()){
     CheckVideoCurrentTime().catch((e)=>{
-      console.log("CheckVideoCurrentTime got error. video time checker stop:", e);
+      debugLog("CheckVideoCurrentTime got error. video time checker stop:", e);
       StopVideoTimeChecker();
     });
   }
@@ -871,7 +879,7 @@ async function KickToplevelObserver(){
   }
   const storageResult = await getStorageSync(["isSpeechWithoutSyncEnabled"]);
   ToplevelObserver = new MutationObserver((mutationList, observer) => {
-    //console.log("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
+    //debugLog("MutationObserver mutate event got (document.body):", mutationList, observer, window.location.href);
     const videoId = GetVideoId();
     IsTargetUrl().then((isTargetUrl)=>{
       if(isTargetUrl){
@@ -886,7 +894,7 @@ async function KickToplevelObserver(){
         StopVideoTimeChecker();
       }
     }).catch(e => {
-      console.log("ToplevelObserver: IsTargetUrl got error", e);
+      debugLog("ToplevelObserver: IsTargetUrl got error", e);
     });
   });
   const toplevel = document.body;
@@ -925,7 +933,7 @@ chrome.storage.onChanged.addListener((changes, namespace)=>{
         }
         break;
       case "lang":
-        //console.log("lang changed. update play locale...");
+        //debugLog("lang changed. update play locale...");
         UpdatePlayLocale(newValue);
         return;
       default:
