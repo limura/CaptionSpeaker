@@ -286,6 +286,9 @@ async function FetchCaptionDataFromTimedText(videoId){
   if(url === undefined) {
     return undefined;
   }
+  if(excludeAccessUrlList.includes(url)){
+    return undefined;
+  }
   let response;
   try {
     excludeAccessUrlList.push(url);
@@ -347,6 +350,8 @@ async function FetchCaptionData(isForceFetch = false){
     }catch(err){
       console.log("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
     }
+    console.log("FetchCaptionData first try json:", json);
+    console.log("CS: accessUrlList: ", accessUrlList, "excludeAccessUrlList:", excludeAccessUrlList);
     if (json === undefined) {
       json = await FetchCaptionDataFromTimedText(videoId);
       if(json === undefined) {
