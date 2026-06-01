@@ -101,7 +101,8 @@ module.exports = {
   normalizeSpeechText,
   applyVoiceSettingsToUtterance,
   buildCaptionSpeechText,
-  getVoiceParameter
+  getVoiceParameter,
+  IsValidVideoDuration
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
@@ -247,4 +248,36 @@ test("getVoiceParameter falls back only when the stored value is falsy", () => {
   assert.equal(mod.getVoiceParameter(1.4, 1.0), 1.4);
   assert.equal(mod.getVoiceParameter(undefined, 1.0), 1.0);
   assert.equal(mod.getVoiceParameter("", 1.0), 1.0);
+});
+
+// videoLengthSeconds が前の動画の値のまま残ると、動画遷移後に発話判定が通らなくなる
+// 問題(②)を IsValidVideoDuration の挙動で固定するテスト群。
+// captionData は最後の字幕が 4:50 (tStartMs=290000) に出る、長さ約300秒の動画を表す。
+const SAMPLE_CAPTION_DATA = {
+  "0:01": { tStartMs: 1000 },
+  "4:50": { tStartMs: 290000 }
+};
+
+test("IsValidVideoDuration accepts a duration close to videoLengthSeconds", () => {
+  const loaded = loadContentScriptEnvironment();
+  // 同じ動画相当(長さがほぼ一致)なら videoLengthSeconds による判定で有効になる
+  loaded.context.videoLengthSeconds = 300;
+  assert.equal(loaded.exports.IsValidVideoDuration(300, SAMPLE_CAPTION_DATA), true);
+});
+
+test("IsValidVideoDuration rejects forever when videoLengthSeconds is stale from the previous video (bug #2 repro)", () => {
+  const loaded = loadContentScriptEnvironment();
+  // 前の動画(長さ600秒)の値が videoLengthSeconds に残ったまま、
+  // 300秒の新しい動画に遷移した状況を再現する。
+  loaded.context.videoLengthSeconds = 600;
+  // |600 - 300| >= 4 なので false になり、CheckVideoCurrentTime が発話に到達できず無音になる。
+  assert.equal(loaded.exports.IsValidVideoDuration(300, SAMPLE_CAPTION_DATA), false);
+});
+
+test("IsValidVideoDuration falls back to caption timings when videoLengthSeconds is reset to -1", () => {
+  const loaded = loadContentScriptEnvironment();
+  // 動画遷移時に videoLengthSeconds を -1 へリセットした後の挙動(修正後に期待する状態)。
+  loaded.context.videoLengthSeconds = -1;
+  // -1 のときは字幕の最終時刻(290秒)で判定するため、300秒の動画は再生可能と判定される。
+  assert.equal(loaded.exports.IsValidVideoDuration(300, SAMPLE_CAPTION_DATA), true);
 });

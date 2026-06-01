@@ -365,6 +365,12 @@ async function FetchCaptionData(isForceFetch = false){
   try {
     const videoId = GetVideoId();
     if(videoId == CURRENT_VIDEO_ID && !isForceFetch){return undefined;}
+    // 新しい動画になったので前の動画の長さを捨てる。(②)
+    // player_response の取得に失敗して timedtext のみで字幕が取れた場合、
+    // videoLengthSeconds が更新されず前の動画の値が残り、長さの違う動画では
+    // IsValidVideoDuration が永久に false を返して発話に到達できなくなる。
+    // -1 に戻しておくと、更新できなかった場合でも字幕の最終時刻ベースで判定される。
+    videoLengthSeconds = -1;
     let json = undefined;
     const storageResult = await getStorageSync(CAPTION_FETCH_STORAGE_KEYS);
     if(!isSpeechEnabled(storageResult)) {
