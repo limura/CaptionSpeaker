@@ -146,7 +146,12 @@ module.exports = {
   StartVideoTimeChecker,
   StopVideoTimeChecker,
   InitializeScreenObserver,
-  KickToplevelObserver
+  KickToplevelObserver,
+  SpeechAllWithoutSync,
+  CheckPlayLocaleUpdate,
+  LoadBooleanSettings,
+  IsTargetUrl,
+  attachVolumeRecoveryHandlers
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
@@ -965,4 +970,107 @@ test("KickToplevelObserver installs a mutation observer", async () => {
   const before = loaded.mutationObservers.length;
   await loaded.exports.KickToplevelObserver();
   assert.ok(loaded.mutationObservers.length > before);
+});
+
+// --- 同期せず全文を一度に読み上げるモード(isSpeechWithoutSyncEnabled) ---
+
+test("SpeechAllWithoutSync reads the entire transcript in a single utterance", async () => {
+  const video = { currentTime: 0, duration: 100, volume: 1 };
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    storageResult: {},
+    evaluateResult: evaluateByXPathSubstring([["html5-main-video", video]])
+  });
+  loaded.exports.state.captionData = { "0:01": { segment: "hello" }, "0:05": { segment: "world" } };
+  loaded.exports.state.videoLengthSeconds = 100;
+  await loaded.exports.SpeechAllWithoutSync();
+  assert.equal(loaded.speech.speak.length, 1);
+  assert.equal(loaded.speech.speak[0].text.trim(), "hello world");
+});
+
+test("SpeechAllWithoutSync stays silent when speech is disabled", async () => {
+  const video = { currentTime: 0, duration: 100, volume: 1 };
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    storageResult: { isEnabled: false },
+    evaluateResult: evaluateByXPathSubstring([["html5-main-video", video]])
+  });
+  loaded.exports.state.captionData = { "0:01": { segment: "hello" } };
+  loaded.exports.state.videoLengthSeconds = 100;
+  await loaded.exports.SpeechAllWithoutSync();
+  assert.equal(loaded.speech.speak.length, 0);
+});
+
+// --- 選んだ音声から再生ロケールを同期する ---
+
+test("CheckPlayLocaleUpdate sets the play locale from the stored matching voice", async () => {
+  const loaded = loadContentScriptEnvironment({
+    storageResult: { lang: "en-US", voice: "Alice" },
+    voices: [{ lang: "en-US", name: "Alice" }]
+  });
+  loaded.exports.state.playLocale = "ja";
+  await loaded.exports.CheckPlayLocaleUpdate();
+  assert.equal(loaded.exports.state.playLocale, "en");
+});
+
+test("CheckPlayLocaleUpdate leaves the locale unchanged when no voice matches", async () => {
+  const loaded = loadContentScriptEnvironment({
+    storageResult: { lang: "en-US", voice: "Nobody" },
+    voices: [{ lang: "en-US", name: "Alice" }]
+  });
+  loaded.exports.state.playLocale = "ja";
+  await loaded.exports.CheckPlayLocaleUpdate();
+  assert.equal(loaded.exports.state.playLocale, "ja");
+});
+
+// --- 有効/無効の反映 ---
+
+test("LoadBooleanSettings cancels speech when disabled", async () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc", storageResult: { isEnabled: false } });
+  loaded.exports.state.speakTargetUrl = loaded.context.location.href;
+  await loaded.exports.LoadBooleanSettings();
+  assert.ok(loaded.speech.cancel >= 1);
+});
+
+test("LoadBooleanSettings does not cancel when enabled", async () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc", storageResult: { isEnabled: true } });
+  loaded.exports.state.speakTargetUrl = loaded.context.location.href;
+  await loaded.exports.LoadBooleanSettings();
+  assert.equal(loaded.speech.cancel, 0);
+});
+
+// --- 対象URL判定(設定込み)の async ラッパー ---
+
+test("IsTargetUrl resolves the target-url decision from storage", async () => {
+  const watch = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc", storageResult: {} });
+  assert.equal(await watch.exports.IsTargetUrl(), true);
+
+  const embedDisabled = loadContentScriptEnvironment({ href: "https://www.youtube.com/embed/abc", storageResult: { isDisableSpeechEmbeddedSite: true } });
+  assert.equal(await embedDisabled.exports.IsTargetUrl(), false);
+});
+
+// --- 発話中だけ元動画の音量を下げ、終了で戻す配線 ---
+
+test("attachVolumeRecoveryHandlers does nothing unless override is enabled", () => {
+  const loaded = loadContentScriptEnvironment();
+  loaded.exports.state.originalVolume = 0.8;
+  const utt = {};
+  const video = { volume: 0.8 };
+  loaded.exports.attachVolumeRecoveryHandlers(utt, { isOverrideOriginalVolumeEnabled: false }, video);
+  assert.equal(utt.onend, undefined);
+  assert.equal(video.volume, 0.8);
+});
+
+test("attachVolumeRecoveryHandlers lowers the video volume and restores it on utterance end", () => {
+  const loaded = loadContentScriptEnvironment();
+  loaded.exports.state.originalVolume = 0.8;
+  loaded.exports.state.overrideVolumeCount = 0;
+  const utt = {};
+  const video = { volume: 0.8 };
+  // パネルノードが無いので GetYtpVolumePanelValue は fallback(=0.8) を返す → 0.8*0.25=0.2
+  loaded.exports.attachVolumeRecoveryHandlers(utt, { isOverrideOriginalVolumeEnabled: true, overrideOriginalVolumeMagnification: 0.25 }, video);
+  assert.equal(video.volume, 0.2);
+  assert.equal(typeof utt.onend, "function");
+  utt.onend(); // 発話終了 → カウント0 → 元の音量へ
+  assert.equal(video.volume, 0.8);
 });
