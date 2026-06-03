@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=video123", evaluateResult, querySelectorMap, querySelectorAllMap } = {}) {
+function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=video123", evaluateResult, querySelectorMap, querySelectorAllMap, storageResult, fetchImpl, voices = [], setTimeoutImpl, clearTimeoutImpl, speechSynthesisImpl, speaking = false } = {}) {
   const codePath = path.join(__dirname, "..", "CaptionSpeaker", "contentScript.js");
   const source = fs.readFileSync(codePath, "utf8");
 
@@ -32,7 +32,7 @@ function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=
     storage: {
       sync: {
         get(_keys, cb) {
-          cb({});
+          cb(storageResult ?? {});
         }
       },
       onChanged: {
@@ -46,12 +46,27 @@ function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=
     }
   };
 
+  // テストから観測するための記録領域
+  const speech = { speak: [], cancel: 0, resume: 0, pause: 0, speaking };
+  const speechSynthesis = speechSynthesisImpl ?? {
+    getVoices() { return voices; },
+    speak(utt) { speech.speak.push(utt); },
+    cancel() { speech.cancel += 1; },
+    resume() { speech.resume += 1; },
+    pause() { speech.pause += 1; },
+    get speaking() { return speech.speaking; }
+  };
+  const mutationObservers = [];
+  const windowEventListeners = [];
+  const fetchCalls = [];
+
   const context = {
     module: { exports: {} },
     exports: {},
     console,
-    setTimeout,
-    clearTimeout,
+    setTimeout: setTimeoutImpl ?? setTimeout,
+    clearTimeout: clearTimeoutImpl ?? clearTimeout,
+    fetch: fetchImpl ? ((...args) => { fetchCalls.push(args); return fetchImpl(...args); }) : undefined,
     URL,
     Promise,
     document,
@@ -60,21 +75,13 @@ function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=
     window: {
       location: { href },
       navigator: { language: "ja-JP" },
-      speechSynthesis: {
-        getVoices() {
-          return [];
-        },
-        speak() {},
-        cancel() {},
-        resume() {},
-        pause() {},
-        speaking: false
-      },
-      addEventListener() {}
+      speechSynthesis,
+      addEventListener(type, handler) { windowEventListeners.push({ type, handler }); }
     },
     MutationObserver: class {
       constructor(callback) {
         this.callback = callback;
+        mutationObservers.push(this);
       }
       observe() {}
       disconnect() {}
@@ -127,13 +134,29 @@ module.exports = {
   onUrlAccessed,
   shouldSkipTimedTextCollection,
   GetYtpVolumePanelValue,
-  CheckCaptionIsDisplaying
+  CheckCaptionIsDisplaying,
+  fetchYoutubeJson,
+  startSpeech,
+  stopSpeechWithSpeakCheck,
+  resumeSpeechIfMoviePlayerActive,
+  AddSpeechQueue,
+  CheckAndSpeech,
+  checkCurrentVideoTimeTexts,
+  CheckVideoCurrentTime,
+  StartVideoTimeChecker,
+  StopVideoTimeChecker,
+  InitializeScreenObserver,
+  KickToplevelObserver
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
   return {
     exports: context.module.exports,
-    context
+    context,
+    speech,
+    mutationObservers,
+    windowEventListeners,
+    fetchCalls
   };
 }
 
@@ -687,4 +710,259 @@ test("GetYtpVolumePanelValue reads the HTML volume panel and clamps to [0,1]", (
 
   // パネルが読めない(ノード無し)場合は fallback を返す
   assert.equal(loadContentScriptEnvironment().exports.GetYtpVolumePanelValue(0.7), 0.7);
+});
+
+// =========================================================================
+// 非同期/副作用層: fetch・発話ディスパッチ・オブザーバ/タイマー
+// =========================================================================
+
+function mockResponse({ ok = true, status = 200, body = "" }) {
+  return { ok, status, text: async () => body };
+}
+
+const TIMEDTEXT_URL = "https://www.youtube.com/api/timedtext?v=a&lang=en";
+
+test("fetchYoutubeJson refuses non-youtube urls without fetching (SSRF guard)", async () => {
+  const loaded = loadContentScriptEnvironment({ fetchImpl: () => { throw new Error("should not fetch"); } });
+  assert.equal(await loaded.exports.fetchYoutubeJson("https://evil.com/x"), undefined);
+  assert.equal(loaded.fetchCalls.length, 0);
+});
+
+test("fetchYoutubeJson skips urls already in the exclude list", async () => {
+  const loaded = loadContentScriptEnvironment({ fetchImpl: () => { throw new Error("should not fetch"); } });
+  loaded.exports.state.excludeAccessUrlList = [TIMEDTEXT_URL];
+  assert.equal(await loaded.exports.fetchYoutubeJson(TIMEDTEXT_URL), undefined);
+  assert.equal(loaded.fetchCalls.length, 0);
+});
+
+test("fetchYoutubeJson parses JSON on success and records the fetched url", async () => {
+  const loaded = loadContentScriptEnvironment({ fetchImpl: async () => mockResponse({ body: '{"events":[]}' }) });
+  loaded.exports.state.excludeAccessUrlList = [];
+  const result = await loaded.exports.fetchYoutubeJson(TIMEDTEXT_URL);
+  assert.deepEqual(Object.keys(result), ["events"]);
+  assert.ok(loaded.exports.state.excludeAccessUrlList.includes(TIMEDTEXT_URL));
+});
+
+test("fetchYoutubeJson returns undefined for non-ok responses, bad JSON, and fetch errors", async () => {
+  const notOk = loadContentScriptEnvironment({ fetchImpl: async () => mockResponse({ ok: false, status: 404 }) });
+  notOk.exports.state.excludeAccessUrlList = [];
+  assert.equal(await notOk.exports.fetchYoutubeJson(TIMEDTEXT_URL), undefined);
+
+  const badJson = loadContentScriptEnvironment({ fetchImpl: async () => mockResponse({ body: "not json" }) });
+  badJson.exports.state.excludeAccessUrlList = [];
+  assert.equal(await badJson.exports.fetchYoutubeJson(TIMEDTEXT_URL), undefined);
+
+  const threw = loadContentScriptEnvironment({ fetchImpl: async () => { throw new Error("network"); } });
+  threw.exports.state.excludeAccessUrlList = [];
+  assert.equal(await threw.exports.fetchYoutubeJson(TIMEDTEXT_URL), undefined);
+});
+
+// --- 発話開始/停止のガード(別URLからの cancel 誤爆防止) ---
+
+function fakeSpeech() {
+  return { spoken: [], cancelled: 0, speak(u) { this.spoken.push(u); }, cancel() { this.cancelled += 1; } };
+}
+
+test("startSpeech remembers the speak-target url and dispatches speak", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc" });
+  const ss = fakeSpeech();
+  const utt = { text: "hi" };
+  loaded.exports.startSpeech(ss, utt);
+  assert.equal(loaded.exports.state.speakTargetUrl, "https://www.youtube.com/watch?v=abc");
+  assert.equal(ss.spoken[0], utt);
+});
+
+test("stopSpeechWithSpeakCheck cancels only when the speak-target url matches the current url", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc" });
+  const ss = fakeSpeech();
+  loaded.exports.state.speakTargetUrl = "https://www.youtube.com/watch?v=abc"; // 一致 → cancel
+  loaded.exports.stopSpeechWithSpeakCheck(ss);
+  assert.equal(ss.cancelled, 1);
+  loaded.exports.state.speakTargetUrl = "https://www.youtube.com/watch?v=OTHER"; // 不一致 → cancel しない
+  loaded.exports.stopSpeechWithSpeakCheck(ss);
+  assert.equal(ss.cancelled, 1);
+});
+
+// --- 発話ディスパッチ ---
+
+test("AddSpeechQueue dispatches an utterance with newline-normalized text", () => {
+  const loaded = loadContentScriptEnvironment();
+  loaded.exports.AddSpeechQueue("line1\nline2", {}, null);
+  assert.equal(loaded.speech.speak.length, 1);
+  assert.equal(loaded.speech.speak[0].text, "line1 line2");
+});
+
+test("CheckAndSpeech speaks the caption at the time and dedups by prevSpeakTime", () => {
+  const loaded = loadContentScriptEnvironment();
+  loaded.exports.state.captionData = { "0:05": { segment: "hello" } };
+  loaded.exports.state.prevSpeakTime = "";
+  loaded.exports.CheckAndSpeech("0:05", {}, null);
+  assert.equal(loaded.speech.speak.length, 1);
+  assert.equal(loaded.speech.speak[0].text, "hello");
+  assert.equal(loaded.exports.state.prevSpeakTime, "0:05");
+  loaded.exports.CheckAndSpeech("0:05", {}, null); // 同じ時刻 → 重複しない
+  assert.equal(loaded.speech.speak.length, 1);
+});
+
+test("CheckAndSpeech stays silent when there is no caption at the time", () => {
+  const loaded = loadContentScriptEnvironment();
+  loaded.exports.state.captionData = { "0:05": { segment: "hello" } };
+  loaded.exports.CheckAndSpeech("0:09", {}, null);
+  assert.equal(loaded.speech.speak.length, 0);
+});
+
+test("CheckAndSpeech honors isDisableSpeechIfChaptionDisabled when captions are hidden", () => {
+  const loaded = loadContentScriptEnvironment(); // 字幕ボタン無し → 表示なし扱い
+  loaded.exports.state.captionData = { "0:05": { segment: "hello" } };
+  loaded.exports.CheckAndSpeech("0:05", { isDisableSpeechIfChaptionDisabled: true }, null);
+  assert.equal(loaded.speech.speak.length, 0);
+});
+
+test("checkCurrentVideoTimeTexts speaks the caption for the reached second", () => {
+  const loaded = loadContentScriptEnvironment();
+  loaded.exports.state.captionData = { "0:05": { segment: "five" } };
+  loaded.exports.state.prevCheckVideoTimeText = "";
+  loaded.exports.state.prevSpeakTime = "";
+  loaded.exports.checkCurrentVideoTimeTexts(5.4, 0, {}, null); // 5.4s → "0:05"
+  assert.equal(loaded.speech.speak.length, 1);
+  assert.equal(loaded.speech.speak[0].text, "five");
+});
+
+// --- 再生位置チェックの一気通貫 ---
+
+test("CheckVideoCurrentTime speaks the caption at the current playback time", async () => {
+  const video = { currentTime: 5, duration: 100, volume: 1 };
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    storageResult: {},
+    evaluateResult: evaluateByXPathSubstring([["html5-main-video", video]])
+  });
+  loaded.exports.state.captionData = { "0:05": { segment: "hello" } };
+  loaded.exports.state.videoLengthSeconds = 100;
+  loaded.exports.state.prevCheckVideoTimeText = "";
+  loaded.exports.state.prevSpeakTime = "";
+  await loaded.exports.CheckVideoCurrentTime(0);
+  assert.equal(loaded.speech.speak.length, 1);
+  assert.equal(loaded.speech.speak[0].text, "hello");
+});
+
+test("CheckVideoCurrentTime stays silent when the duration looks invalid", async () => {
+  const video = { currentTime: 5, duration: 100, volume: 1 };
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    storageResult: {},
+    evaluateResult: evaluateByXPathSubstring([["html5-main-video", video]])
+  });
+  loaded.exports.state.captionData = { "0:05": { segment: "hello" } };
+  loaded.exports.state.videoLengthSeconds = 999; // duration(100) と食い違う
+  await loaded.exports.CheckVideoCurrentTime(0);
+  assert.equal(loaded.speech.speak.length, 0);
+});
+
+// --- タイマー(setTimeout を注入して実タイマーを使わない) ---
+
+test("StartVideoTimeChecker reschedules itself every 250ms", () => {
+  const scheduled = [];
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    setTimeoutImpl: (fn, ms) => { scheduled.push(ms); return 1; },
+    clearTimeoutImpl: () => {}
+  });
+  loaded.exports.StartVideoTimeChecker();
+  assert.deepEqual(scheduled, [250]);
+});
+
+test("StopVideoTimeChecker clears the scheduled timer id", () => {
+  const cleared = [];
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    setTimeoutImpl: () => 777,
+    clearTimeoutImpl: (id) => { cleared.push(id); }
+  });
+  loaded.exports.StartVideoTimeChecker();
+  loaded.exports.StopVideoTimeChecker();
+  assert.deepEqual(cleared, [777]);
+});
+
+// --- プレイヤー状態オブザーバ(screenObserver) ---
+
+const MOVIE_PLAYER_SELECTOR = "#movie_player[class*='html5-video-player']";
+
+test("resumeSpeechIfMoviePlayerActive resumes only when the player is in playing-mode", () => {
+  const playing = loadContentScriptEnvironment({
+    querySelectorMap: { [MOVIE_PLAYER_SELECTOR]: { classList: { contains: (c) => c === "playing-mode" } } }
+  });
+  playing.exports.state.paused = true;
+  playing.exports.resumeSpeechIfMoviePlayerActive();
+  assert.equal(playing.exports.state.paused, false);
+  assert.equal(playing.speech.resume, 1);
+
+  const idle = loadContentScriptEnvironment();
+  idle.exports.resumeSpeechIfMoviePlayerActive();
+  assert.equal(idle.speech.resume, 0);
+});
+
+test("InitializeScreenObserver registers a blur handler that cancels speech while paused", () => {
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    querySelectorMap: { [MOVIE_PLAYER_SELECTOR]: { classList: { contains: () => false } } }
+  });
+  const blur = loaded.windowEventListeners.filter((l) => l.type === "blur");
+  assert.ok(blur.length >= 1);
+  loaded.exports.state.paused = true;
+  loaded.exports.state.speakTargetUrl = loaded.context.location.href;
+  blur[0].handler({});
+  assert.ok(loaded.speech.cancel >= 1);
+});
+
+test("screenObserver pauses speech when the player enters paused-mode", () => {
+  const loaded = loadContentScriptEnvironment();
+  const screenObserver = loaded.mutationObservers[0];
+  loaded.speech.speaking = true;
+  loaded.exports.state.paused = false;
+  const target = { classList: { contains: (c) => c === "paused-mode" }, querySelector: () => ({ currentTime: 42 }) };
+  screenObserver.callback([{ target }]);
+  assert.equal(loaded.exports.state.paused, true);
+  assert.equal(loaded.exports.state.pauseTime, 42);
+  assert.equal(loaded.speech.pause, 1);
+});
+
+test("screenObserver resumes speech when un-pausing at nearly the same time", () => {
+  const loaded = loadContentScriptEnvironment();
+  const screenObserver = loaded.mutationObservers[0];
+  loaded.exports.state.paused = true;
+  loaded.exports.state.pauseTime = 42;
+  const target = { classList: { contains: (c) => c === "playing-mode" }, querySelector: () => ({ currentTime: 42.3 }) };
+  screenObserver.callback([{ target }]);
+  assert.equal(loaded.exports.state.paused, false);
+  assert.equal(loaded.speech.resume, 1);
+});
+
+test("screenObserver cancels speech when un-pausing after a seek", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc" });
+  const screenObserver = loaded.mutationObservers[0];
+  loaded.exports.state.paused = true;
+  loaded.exports.state.pauseTime = 42;
+  loaded.exports.state.speakTargetUrl = loaded.context.location.href;
+  const target = { classList: { contains: (c) => c === "playing-mode" }, querySelector: () => ({ currentTime: 100 }) };
+  screenObserver.callback([{ target }]);
+  assert.equal(loaded.exports.state.paused, false);
+  assert.ok(loaded.speech.cancel >= 1);
+});
+
+test("screenObserver cancels speech when the video src changes", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc" });
+  const screenObserver = loaded.mutationObservers[0];
+  loaded.exports.state.speakTargetUrl = loaded.context.location.href;
+  screenObserver.callback([{ attributeName: "src", target: {} }]);
+  assert.ok(loaded.speech.cancel >= 1);
+});
+
+// --- トップレベルオブザーバ(SPA遷移検知) ---
+
+test("KickToplevelObserver installs a mutation observer", async () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc", storageResult: {} });
+  const before = loaded.mutationObservers.length;
+  await loaded.exports.KickToplevelObserver();
+  assert.ok(loaded.mutationObservers.length > before);
 });
