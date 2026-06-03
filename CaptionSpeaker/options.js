@@ -1,3 +1,20 @@
+// 設定キーの単一の情報源。保存(save)・読み込み(load)・リセット(clear)で共通利用する。
+// チェックボックス系(0/1で保存)はループで一括処理する。
+const BOOLEAN_SETTING_IDS = [
+  "isStopIfNewSpeech",
+  "isDisableSpeechIfSameLocaleVideo",
+  "isDisableSpeechIfChaptionDisabled",
+  "isDisableSpeechEmbeddedSite",
+  "isOverrideOriginalVolumeEnabled",
+  "isSpeechWithoutSyncEnabled",
+];
+// lang/voice/rate/overrideOriginalVolumeMagnification は読み込み時に個別処理が必要。
+const ALL_SETTING_KEYS = [
+  "lang", "voice", "pitch", "rate", "volume",
+  ...BOOLEAN_SETTING_IDS,
+  "overrideOriginalVolumeMagnification",
+];
+
 function localizeHtmlPage() {
   document.querySelectorAll("[data-i18n-text]").forEach(element => {
     const key = element.getAttribute("data-i18n-text");
@@ -97,28 +114,11 @@ function getVolume(){
   return document.getElementById("volume").value;
 }
 
-function getIsStopIfNewSpeech(){
-  return document.getElementById("isStopIfNewSpeech").checked ? 1 : 0;
+// チェックボックスの状態を 0/1 で取得します。
+function getCheckboxFlag(id){
+  return document.getElementById(id).checked ? 1 : 0;
 }
 
-function getIsDisableSpeechIfSameLocaleVideo(){
-  return document.getElementById("isDisableSpeechIfSameLocaleVideo").checked ? 1 : 0;
-}
-
-function getIsDisableSpeechIfChaptionDisabled(){
-  return document.getElementById("isDisableSpeechIfChaptionDisabled").checked ? 1 : 0;
-}
-
-function getIsDisableSpeechEmbeddedSite(){
-  return document.getElementById("isDisableSpeechEmbeddedSite").checked ? 1 : 0;
-}
-
-function getIsOverrideOriginalVolumeEnabled(){
-  return document.getElementById("isOverrideOriginalVolumeEnabled").checked ? 1 : 0;
-}
-function getIsSpeechWithoutSyncEnabled(){
-  return document.getElementById("isSpeechWithoutSyncEnabled").checked ? 1 : 0;
-}
 function getOverrideOriginalVolumeMagnification(){
   return document.getElementById("overrideOriginalVolumeMagnification").value;
 }
@@ -154,8 +154,8 @@ function testButtonClicked(speechSynthesis, voices){
     "lang", lang,
     "voice", voice,
     "pitch", utterance.pitch,
-    "rate", utterance.pitch,
-    "volume", utterance.pitch);
+    "rate", utterance.rate,
+    "volume", utterance.volume);
 
   speechSynthesis.speak(utterance);
 }
@@ -173,18 +173,16 @@ function saveButtonClicked(voices, savedInformationElement){
   }else{
     chrome.storage.sync.remove(["voice"]);
   }
-  chrome.storage.sync.set({
+  const values = {
     "pitch": getPitch(),
     "rate": getRate(),
     "volume": getVolume(),
-    "isStopIfNewSpeech": getIsStopIfNewSpeech(),
-    "isDisableSpeechIfSameLocaleVideo": getIsDisableSpeechIfSameLocaleVideo(),
-    "isDisableSpeechIfChaptionDisabled": getIsDisableSpeechIfChaptionDisabled(),
-    "isDisableSpeechEmbeddedSite": getIsDisableSpeechEmbeddedSite(),
-    "isOverrideOriginalVolumeEnabled": getIsOverrideOriginalVolumeEnabled(),
-    "isSpeechWithoutSyncEnabled": getIsSpeechWithoutSyncEnabled(),
     "overrideOriginalVolumeMagnification": getOverrideOriginalVolumeMagnification(),
-  });
+  };
+  for(const id of BOOLEAN_SETTING_IDS){
+    values[id] = getCheckboxFlag(id);
+  }
+  chrome.storage.sync.set(values);
   chrome.runtime.sendMessage({"type": "SettingsUpdated"});
 
   savedInformationElement.textContent = "saved!";
@@ -205,7 +203,7 @@ function selectSelected(selectElement, targetValue){
 }
 
 function loadSettings(voices){
-  chrome.storage.sync.get(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "isSpeechWithoutSyncEnabled", "overrideOriginalVolumeMagnification"], (storage)=>{
+  chrome.storage.sync.get(ALL_SETTING_KEYS, (storage)=>{
   if("lang" in storage){
     let lang = storage.lang;
     selectSelected(document.getElementById("langSelector").childNodes[0], lang);
@@ -231,23 +229,10 @@ function loadSettings(voices){
   if("volume" in storage){
     document.getElementById("volume").value = storage.volume;
   }
-  if("isStopIfNewSpeech" in storage){
-    document.getElementById("isStopIfNewSpeech").checked = storage.isStopIfNewSpeech ? true : false;
-  }
-  if("isDisableSpeechIfSameLocaleVideo" in storage){
-    document.getElementById("isDisableSpeechIfSameLocaleVideo").checked = storage.isDisableSpeechIfSameLocaleVideo ? true : false;
-  }
-  if("isDisableSpeechIfChaptionDisabled" in storage){
-    document.getElementById("isDisableSpeechIfChaptionDisabled").checked = storage.isDisableSpeechIfChaptionDisabled ? true : false;
-  }
-  if("isDisableSpeechEmbeddedSite" in storage){
-    document.getElementById("isDisableSpeechEmbeddedSite").checked = storage.isDisableSpeechEmbeddedSite ? true : false;
-  }
-  if ("isSpeechWithoutSyncEnabled" in storage){
-    document.getElementById("isSpeechWithoutSyncEnabled").checked = storage.isSpeechWithoutSyncEnabled ? true : false;
-  }
-  if("isOverrideOriginalVolumeEnabled" in storage){
-    document.getElementById("isOverrideOriginalVolumeEnabled").checked = storage.isOverrideOriginalVolumeEnabled ? true : false;
+  for(const id of BOOLEAN_SETTING_IDS){
+    if(id in storage){
+      document.getElementById(id).checked = storage[id] ? true : false;
+    }
   }
   if("overrideOriginalVolumeMagnification" in storage){
     const mag = Math.max(0, Math.min(1, storage.overrideOriginalVolumeMagnification));
@@ -258,7 +243,9 @@ function loadSettings(voices){
 }
 
 function clearSettings(){
-  chrome.storage.sync.remove(["lang", "voice", "pitch", "rate", "volume", "isStopIfNewSpeech", "isDisableSpeechIfSameLocaleVideo", "isDisableSpeechIfChaptionDisabled", "isDisableSpeechEmbeddedSite", "isOverrideOriginalVolumeEnabled", "overrideOriginalVolumeMagnification"]);
+  // ALL_SETTING_KEYS を使うことで保存対象を1箇所で管理する。
+  // (以前は isSpeechWithoutSyncEnabled がこのリストから漏れており、リセットしても残っていた)
+  chrome.storage.sync.remove(ALL_SETTING_KEYS);
   location.reload();
 }
 
