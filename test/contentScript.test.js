@@ -89,8 +89,9 @@ function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=
 
   const wrapped = `${source}
 module.exports = {
+  state,
   GetVideoId,
-  GenerateYoutbeiV1PlayerPostPayload,
+  GenerateYoutubeiV1PlayerPostPayload,
   GetCaptionDataUrl,
   CaptionDataToTimeDict,
   IsTargetUrlWithOption,
@@ -102,7 +103,16 @@ module.exports = {
   applyVoiceSettingsToUtterance,
   buildCaptionSpeechText,
   getVoiceParameter,
-  IsValidVideoDuration
+  IsValidVideoDuration,
+  stripLocaleSuffix,
+  startsWithAny,
+  findSelectedVoice,
+  findLatestTimedTextUrl,
+  filterTimedTextAccessUrls,
+  setTimedTextLanguage,
+  FormatTimeFromMillisecond,
+  GuessVideoAutoTranslateOriginalLanguage,
+  VideoLengthSecondsFromPlayerResponse
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
@@ -118,9 +128,9 @@ test("GetVideoId extracts watch, embed, and live ids", () => {
   assert.equal(loadContentScriptEnvironment({ href: "https://www.youtube.com/live/live123?feature=share" }).exports.GetVideoId(), "live123");
 });
 
-test("GenerateYoutbeiV1PlayerPostPayload uses video id from the current url", () => {
+test("GenerateYoutubeiV1PlayerPostPayload uses video id from the current url", () => {
   const mod = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=payload123" }).exports;
-  const payload = JSON.parse(mod.GenerateYoutbeiV1PlayerPostPayload({ INNERTUBE_CONTEXT: { client: { hl: "ja" } } }));
+  const payload = JSON.parse(mod.GenerateYoutubeiV1PlayerPostPayload({ INNERTUBE_CONTEXT: { client: { hl: "ja" } } }));
   assert.deepEqual(payload, {
     context: { client: { hl: "ja" } },
     videoId: "payload123"
@@ -179,12 +189,12 @@ test("IsTargetUrlWithOption respects embedded-video setting", () => {
 test("getTimedTextUrl picks the latest matching timedtext url and replaces tlang", async () => {
   const loaded = loadContentScriptEnvironment();
   const mod = loaded.exports;
-  loaded.context.accessUrlList = [
+  mod.state.accessUrlList = [
     "https://www.youtube.com/api/timedtext?v=video123&lang=en",
     "https://www.youtube.com/api/timedtext?v=other999&lang=en",
     "https://www.youtube.com/api/timedtext?v=video123&lang=fr"
   ];
-  loaded.context.excludeAccessUrlList = ["https://www.youtube.com/api/timedtext?v=video123&lang=en"];
+  mod.state.excludeAccessUrlList = ["https://www.youtube.com/api/timedtext?v=video123&lang=en"];
   const url = await mod.getTimedTextUrl("ja", "video123");
   assert.equal(url, "https://www.youtube.com/api/timedtext?v=video123&lang=fr&tlang=ja");
 });
@@ -261,7 +271,7 @@ const SAMPLE_CAPTION_DATA = {
 test("IsValidVideoDuration accepts a duration close to videoLengthSeconds", () => {
   const loaded = loadContentScriptEnvironment();
   // 同じ動画相当(長さがほぼ一致)なら videoLengthSeconds による判定で有効になる
-  loaded.context.videoLengthSeconds = 300;
+  loaded.exports.state.videoLengthSeconds = 300;
   assert.equal(loaded.exports.IsValidVideoDuration(300, SAMPLE_CAPTION_DATA), true);
 });
 
@@ -269,7 +279,7 @@ test("IsValidVideoDuration rejects forever when videoLengthSeconds is stale from
   const loaded = loadContentScriptEnvironment();
   // 前の動画(長さ600秒)の値が videoLengthSeconds に残ったまま、
   // 300秒の新しい動画に遷移した状況を再現する。
-  loaded.context.videoLengthSeconds = 600;
+  loaded.exports.state.videoLengthSeconds = 600;
   // |600 - 300| >= 4 なので false になり、CheckVideoCurrentTime が発話に到達できず無音になる。
   assert.equal(loaded.exports.IsValidVideoDuration(300, SAMPLE_CAPTION_DATA), false);
 });
@@ -277,7 +287,107 @@ test("IsValidVideoDuration rejects forever when videoLengthSeconds is stale from
 test("IsValidVideoDuration falls back to caption timings when videoLengthSeconds is reset to -1", () => {
   const loaded = loadContentScriptEnvironment();
   // 動画遷移時に videoLengthSeconds を -1 へリセットした後の挙動(修正後に期待する状態)。
-  loaded.context.videoLengthSeconds = -1;
+  loaded.exports.state.videoLengthSeconds = -1;
   // -1 のときは字幕の最終時刻(290秒)で判定するため、300秒の動画は再生可能と判定される。
   assert.equal(loaded.exports.IsValidVideoDuration(300, SAMPLE_CAPTION_DATA), true);
+});
+
+// --- リファクタで抽出・整理した小さな関数群のテスト ---
+
+test("stripLocaleSuffix drops the region suffix", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.stripLocaleSuffix("ja-JP"), "ja");
+  assert.equal(mod.stripLocaleSuffix("en-US"), "en");
+  assert.equal(mod.stripLocaleSuffix("ja"), "ja");
+  assert.equal(mod.stripLocaleSuffix(undefined), undefined);
+});
+
+test("startsWithAny matches only when a prefix is at the head", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const prefixes = ["https://www.youtube.com/watch?", "https://www.youtube.com/live/"];
+  assert.equal(mod.startsWithAny("https://www.youtube.com/watch?v=a", prefixes), true);
+  assert.equal(mod.startsWithAny("https://www.youtube.com/live/a", prefixes), true);
+  assert.equal(mod.startsWithAny("https://www.youtube.com/embed/a", prefixes), false);
+  assert.equal(mod.startsWithAny("https://example.com/watch?v=a", prefixes), false);
+});
+
+test("findSelectedVoice returns the voice matching both lang and name", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const voices = [
+    { lang: "en-US", name: "Alice" },
+    { lang: "ja-JP", name: "Haruka" }
+  ];
+  assert.equal(mod.findSelectedVoice(voices, "ja-JP", "Haruka"), voices[1]);
+  assert.equal(mod.findSelectedVoice(voices, "ja-JP", "Alice"), undefined);
+  assert.equal(mod.findSelectedVoice(voices, "fr-FR", "Haruka"), undefined);
+});
+
+test("filterTimedTextAccessUrls keeps only urls for the given video id", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const urls = [
+    "https://www.youtube.com/api/timedtext?v=abc&lang=en",
+    "https://www.youtube.com/api/timedtext?v=xyz&lang=en",
+    "https://www.youtube.com/api/timedtext?v=abc&lang=fr"
+  ];
+  assert.deepEqual(mod.filterTimedTextAccessUrls(urls, "abc"), [urls[0], urls[2]]);
+  assert.deepEqual(mod.filterTimedTextAccessUrls(urls, "none"), []);
+});
+
+test("findLatestTimedTextUrl returns the last matching, non-excluded url", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const urls = [
+    "https://www.youtube.com/api/timedtext?v=abc&lang=en",
+    "https://www.youtube.com/api/timedtext?v=abc&lang=fr",
+    undefined,
+    "https://www.youtube.com/api/timedtext?v=xyz&lang=en"
+  ];
+  const excluded = ["https://www.youtube.com/api/timedtext?v=abc&lang=fr"];
+  // fr は除外済み、xyz は対象外なので、最後に残る abc&lang=en が返る
+  assert.equal(mod.findLatestTimedTextUrl(urls, excluded, "abc"), urls[0]);
+  assert.equal(mod.findLatestTimedTextUrl(urls, [], "none"), undefined);
+});
+
+test("setTimedTextLanguage sets or overwrites the tlang parameter", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(
+    mod.setTimedTextLanguage("https://www.youtube.com/api/timedtext?v=abc&lang=en", "ja"),
+    "https://www.youtube.com/api/timedtext?v=abc&lang=en&tlang=ja"
+  );
+  assert.equal(
+    mod.setTimedTextLanguage("https://www.youtube.com/api/timedtext?v=abc&tlang=fr", "ja"),
+    "https://www.youtube.com/api/timedtext?v=abc&tlang=ja"
+  );
+  // パースできないURLはそのまま返す
+  assert.equal(mod.setTimedTextLanguage("not a url", "ja"), "not a url");
+});
+
+test("FormatTimeFromMillisecond formats m:ss and h:mm:ss", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.FormatTimeFromMillisecond(1000), "0:01");
+  assert.equal(mod.FormatTimeFromMillisecond(62000), "1:02");
+  assert.equal(mod.FormatTimeFromMillisecond(3661000), "1:01:01");
+});
+
+test("VideoLengthSecondsFromPlayerResponse reads videoDetails.lengthSeconds", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.VideoLengthSecondsFromPlayerResponse({ videoDetails: { lengthSeconds: "300" } }), "300");
+  assert.equal(mod.VideoLengthSecondsFromPlayerResponse({}), undefined);
+  assert.equal(mod.VideoLengthSecondsFromPlayerResponse(undefined), undefined);
+});
+
+test("GuessVideoAutoTranslateOriginalLanguage prefers the asr track", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const langCode = mod.GuessVideoAutoTranslateOriginalLanguage({
+    captions: {
+      playerCaptionsTracklistRenderer: {
+        captionTracks: [
+          { languageCode: "ja" },
+          { kind: "asr", languageCode: "en" }
+        ]
+      }
+    }
+  });
+  assert.equal(langCode, "en");
+  // 字幕トラックが無ければ undefined
+  assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage({}), undefined);
 });

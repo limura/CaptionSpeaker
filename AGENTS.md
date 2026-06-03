@@ -36,7 +36,7 @@ node --test --test-name-pattern="GetVideoId"          # 名前を指定して単
 
 `FetchCaptionData` が入口です。次の順で試します。
 
-1. **`FetchCaptionDataFromPlayerResponse`** — インラインの `ytcfg.set({...})` スクリプトから `INNERTUBE_API_KEY` を抜き出し、`youtubei/v1/player` に POST して `captions.playerCaptionsTracklistRenderer.captionTracks` を読み取ります。`GetCaptionDataUrl` はロケールが完全一致するトラックを優先し、なければ先頭トラックに `&tlang=<locale>` を付けて YouTube の自動翻訳を要求します。**この解析は意図的に脆い**作りです（`GetYoutbeiV1PlayerData` の長いコメントを参照）。YouTube の JS シリアライズ形式（`ytcfg.set({` … `});window.ytcfg.obfuscatedData_`）に正確に依存しているため、YouTube 側の形式変更が最も多い故障原因です。
+1. **`FetchCaptionDataFromPlayerResponse`** — インラインの `ytcfg.set({...})` スクリプトから `INNERTUBE_API_KEY` を抜き出し、`youtubei/v1/player` に POST して `captions.playerCaptionsTracklistRenderer.captionTracks` を読み取ります。`GetCaptionDataUrl` はロケールが完全一致するトラックを優先し、なければ先頭トラックに `&tlang=<locale>` を付けて YouTube の自動翻訳を要求します。**この解析は意図的に脆い**作りです（`GetYoutubeiV1PlayerData` の長いコメントを参照）。YouTube の JS シリアライズ形式（`ytcfg.set({` … `});window.ytcfg.obfuscatedData_`）に正確に依存しているため、YouTube 側の形式変更が最も多い故障原因です。
 2. **`FetchCaptionDataFromTimedText`** — フォールバックです。background が `url_accessed` で集めて `accessUrlList` に溜めた URL に依存します。まだ 1 つも観測できていない場合は、字幕ボタンをクリックして（`doubleClickWithDelay`）YouTube 自身の UI に `timedtext` URL を取得させ、その後 `tlang` パラメータを書き換えます。`shouldSkipTimedTextCollection` は字幕のない動画（例: ライブ配信）で字幕ボタンを延々と押し続けないようにします。
 
 取得した JSON は `CaptionDataToTimeDict` で `"m:ss"` のタイムスタンプをキーとする辞書 `{tStartMs, segment, time}` に正規化されます。1 行分のセグメントを連結し、インラインの HTML タグ（`<b>`、`<i>` など）を除去します。
@@ -57,7 +57,8 @@ YouTube はチャンネル → 視聴ページの遷移時に通常のナビゲ�
 ## 規約と制約
 
 - **コード内のコメントは日本語です。** 既存ファイルを編集するときはそれに合わせてください。
-- **テストはコンテンツスクリプトを `vm.runInNewContext` で読み込みます**（[test/contentScript.test.js](test/contentScript.test.js)）。ソース文字列の末尾に内部関数を列挙した `module.exports = { … }` を付け足し、手作りでモックした `document`/`window`/`chrome` の上で実行します。関数をテスト可能にするには、`contentScript.js` 内で**トップレベルの `function` 宣言**である必要があり（入れ子や `var` に代入したアロー関数は不可）、その export 一覧に追加します。スクリプトが触るブラウザのグローバルは `loadContentScriptEnvironment` 内でモックする必要があります。
+- **テストは各スクリプトを `vm.runInNewContext` で読み込みます**（[test/contentScript.test.js](test/contentScript.test.js)、[test/options.test.js](test/options.test.js)、[test/background.test.js](test/background.test.js)）。ソース文字列の末尾に内部関数を列挙した `module.exports = { … }` を付け足し、手作りでモックした `document`/`window`/`chrome` の上で実行します。関数をテスト可能にするには、対象スクリプト内で**トップレベルの `function` 宣言**である必要があり（入れ子や `var` に代入したアロー関数は不可）、その export 一覧に追加します。スクリプトが触るブラウザのグローバルは各 `load〜Environment` 内でモックする必要があります。
+- **コンテンツスクリプトの可変状態は `state` オブジェクトに集約しています。** 以前トップレベルに散らばっていた `var`/`let`（`captionData`・`videoLengthSeconds`・`accessUrlList` など）を 1 つの `const state = { … }` にまとめています。テストからは `module.exports` で `state` を公開し、`loaded.exports.state.videoLengthSeconds = …` のように直接書き換えて検証します（以前の `loaded.context.<グローバル名>` 直書きは廃止）。新しい共有状態を足すときは `state` に追加してください。`vm` で生成された配列は主実行系とプロトタイプが異なるため、`deepStrictEqual` で配列を比較する前に `[...result]` でスプレッドします。
 - **セキュリティ方針（v2.0.12 以降）:** コンテンツスクリプトと host 権限は `youtube.com` のみに限定しています。`IsYoutubeUrl` は外部由来の URL を `fetch` する前に必ずガードしなければなりません（SSRF 対策）。コンソール出力は `debugLog`/`CS_DEBUG`（既定で OFF）を通し、視聴 URL や字幕本文が漏れないようにしています。これらのガードは維持してください。
 - **ローカライズ:** `CaptionSpeaker/_locales/{en,ja,zh_CN,zh_TW}/messages.json`、`default_locale` は `en` です。UI 文字列は manifest 内では `__MSG_key__`、HTML では `data-i18n-text`/`data-i18n-value` 属性を使い、`localizeHtmlPage()` が `chrome.i18n.getMessage` で解決します。新しい文字列はすべてのロケールに追加してください。
 - **バージョニング:** リリースごとに [CaptionSpeaker/manifest.json](CaptionSpeaker/manifest.json) の `version` を上げ、[README.md](README.md) の更新履歴セクションに対応する `## Version x.y.z` の項目（日本語の変更履歴）を追記します。
