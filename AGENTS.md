@@ -32,12 +32,14 @@ node --test --test-name-pattern="GetVideoId"          # 名前を指定して単
 
 設定はすべて `chrome.storage.sync` に保存され、コンテンツスクリプトは `chrome.storage.onChanged` で変更にリアルタイムに反応します。主なフラグ: `isEnabled`、`lang`/`voice`/`pitch`/`rate`/`volume`、`isStopIfNewSpeech`、`isDisableSpeechIfSameLocaleVideo`、`isDisableSpeechIfChaptionDisabled`、`isDisableSpeechEmbeddedSite`、`isOverrideOriginalVolumeEnabled`/`overrideOriginalVolumeMagnification`、`isSpeechWithoutSyncEnabled`。
 
-### 字幕の取得 — 2 つの方式とフォールバック
+### 字幕の取得 — メタデータは DOM、本文は timedtext のみ
 
-`FetchCaptionData` が入口です。次の順で試します。
+`FetchCaptionData` が入口です。
 
-1. **`FetchCaptionDataFromPlayerResponse`** — インラインの `ytcfg.set({...})` スクリプトから `INNERTUBE_API_KEY` を抜き出し、`youtubei/v1/player` に POST して `captions.playerCaptionsTracklistRenderer.captionTracks` を読み取ります。`GetCaptionDataUrl` はロケールが完全一致するトラックを優先し、なければ先頭トラックに `&tlang=<locale>` を付けて YouTube の自動翻訳を要求します。**この解析は意図的に脆い**作りです（`GetYoutubeiV1PlayerData` の長いコメントを参照）。YouTube の JS シリアライズ形式（`ytcfg.set({` … `});window.ytcfg.obfuscatedData_`）に正確に依存しているため、YouTube 側の形式変更が最も多い故障原因です。
-2. **`FetchCaptionDataFromTimedText`** — フォールバックです。background が `url_accessed` で集めて `accessUrlList` に溜めた URL に依存します。まだ 1 つも観測できていない場合は、字幕ボタンをクリックして（`doubleClickWithDelay`）YouTube 自身の UI に `timedtext` URL を取得させ、その後 `tlang` パラメータを書き換えます。`shouldSkipTimedTextCollection` は字幕のない動画（例: ライブ配信）で字幕ボタンを延々と押し続けないようにします。
+1. **メタデータ** — `GetPlayerResponseFromDom` が視聴ページ埋め込みの `ytInitialPlayerResponse`(JSON)を DOM から読み、`updateCaptionFetchMetadata` が動画長(`videoLengthSeconds`)と字幕言語(`guessedOriginalCaptionLanguage`)を取り出します。`videoDetails.videoId` が現在の動画と一致するときだけ採用します（SPA 遷移で前動画のデータが残るのを防ぐため）。
+2. **字幕本文** — `FetchCaptionDataFromTimedText` のみで取得します。background が `url_accessed` で集めて `accessUrlList` に溜めた、**player 自身がリクエストした `timedtext` URL** を使い、`tlang` パラメータを書き換えます。まだ 1 つも観測できていない場合は、字幕ボタンをクリックして（`doubleClickWithDelay`）player にリクエストさせます。`shouldSkipTimedTextCollection` は字幕のない動画（例: ライブ配信）で字幕ボタンを延々と押し続けないようにします。
+
+> **なぜ player_response から直接 URL を組み立てないのか**: 以前は `ytcfg` を解析して `youtubei/v1/player` へ POST し、字幕 URL を自前生成していたが、調査の結果 (a) その POST 応答には字幕トラックが含まれず常に DOM 側へフォールバックしていた、(b) `timedtext` の取得には player が生成する `po_token`(pot) が必須で自前生成は非現実的(BotGuard) と判明したため廃止した（脆い ytcfg パーサも同時に撤去）。pot を得る唯一の現実的手段が「player 自身にリクエストさせて観測する」timedtext 経路なので、`doubleClickWithDelay` はその起点として必要。
 
 取得した JSON は `CaptionDataToTimeDict` で `"m:ss"` のタイムスタンプをキーとする辞書 `{tStartMs, segment, time}` に正規化されます。1 行分のセグメントを連結し、インラインの HTML タグ（`<b>`、`<i>` など）を除去します。
 

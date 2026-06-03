@@ -32,7 +32,6 @@ function debugLog(){
 }
 
 const YOUTUBE_UI_SELECTORS = {
-  configScriptXPath: "//script[@nonce and contains(text(),'INNERTUBE_API_KEY')]",
   initialPlayerResponseXPath: "//script[@nonce and contains(text(),'var ytInitialPlayerResponse')]",
   subtitlesButtonXPath: "//button[contains(@class,'ytp-subtitles-button')]|//button[@class='ytmClosedCaptioningButtonButton']",
   videoXPath: "//video[contains(@class,'html5-main-video')]",
@@ -157,83 +156,25 @@ function stopSpeechWithSpeakCheck(speechSynthesis) {
   speechSynthesis.cancel()
 }
 
-/*
-ytConfig(?) から
-怪しく https://www.youtube.com/youtubei/v1/player?key=...8&prettyPrint=false
-にPOSTで送り込むためのデータを生成します。
-*/
-function GenerateYoutubeiV1PlayerPostPayload(ytConfig){
-  const context = ytConfig?.INNERTUBE_CONTEXT;
-  const videoId = GetVideoId();
-  const payloadObj = {
-    "context": context,
-    "videoId": videoId
-  };
-  return JSON.stringify(payloadObj);
-}
-
-// 怪しく INNERETUBE_API_KEY が書かれている辺りをHTMLから取り出して
-// https://www.youtube.com/youtubei/v1/player? を叩いて
-// それらしい初期データを取り出します。
-async function GetYoutubeiV1PlayerData(){
-  // TODO: これはかなり怪しく「ソレ」を取り出しているのでちょっとでもフォーマットが変わると誤動作するはずです。
-  // 具体的には "ytcfg.set({" ではじまって ");window.ytcfg.obfscatedData_" に続く
-  // までの間の物が「ソレ」だと仮定しているので、目的の ytcfg.set の直後に
-  // window.ytcfg.obfuscatedData_ を書いていてくれないと動きません。
-  // これは完全に youtube の人がどうそれを JavaScript コードに落とし込んでいるかに依存しているため、
-  // 正直言って全然、全く、完膚なきまでに、よろしくありません。
-  const ytCfgScript = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.configScriptXPath);
-  const ytCfgJSON = ytCfgScript?.innerText?.replace(/^[\s\S]*ytcfg\.set\({/g,'{').replace(/}\);\s*window\.ytcfg\.obfuscatedData_[\s\S]*/,'}');
-  if(typeof ytCfgJSON != "string" || ytCfgJSON.length <= 0){
-    debugLog("ERROR: ytcfg.set({\"CLIENT_CANARY_STATE... not found");
+// 視聴ページに埋め込まれている ytInitialPlayerResponse(JSON) を DOM から読み取ります。
+// メタデータ(動画長・字幕の言語)を得るためだけに使います。
+//
+// 【経緯】以前は ytcfg を解析して INNERTUBE_API_KEY を取り出し、youtubei/v1/player へ
+// POST して player_response を得ていたが、調査の結果:
+//   - その POST 応答には字幕トラックが含まれず、結局いつもこの DOM 側へフォールバックしていた
+//   - 字幕本文の取得には player が生成する po_token(pot) が必須で、自前生成は非現実的(BotGuard)
+// だったため、POST 一式と字幕URL生成(GetCaptionDataUrl)は廃止した。
+// 字幕本文は timedtext 経路(background が観測した player 自身のリクエストURL)から取得する。
+function GetPlayerResponseFromDom(){
+  const el = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.initialPlayerResponseXPath);
+  if(!el){ return undefined; }
+  try {
+    const code = el.innerText.replace("var ytInitialPlayerResponse = ", "").replace(/};var .*/, '}');
+    return JSON.parse(code);
+  }catch(err){
+    debugLog("GetPlayerResponseFromDom parse error", err);
     return undefined;
   }
-  try {
-    const ytConfig = JSON.parse(ytCfgJSON);
-    const key = ytConfig?.INNERTUBE_API_KEY;
-    const payload = GenerateYoutubeiV1PlayerPostPayload(ytConfig);
-    const targetUrl = `https://www.youtube.com/youtubei/v1/player?key=${key}&prettyPrint=false`;
-    const res = await fetch(targetUrl, {
-      method: "POST",
-      body: payload,
-      headers: {
-        "content-type": "application/json"
-      }
-    });
-    const resData = await res.json();
-    if(!(resData?.captions?.playerCaptionsTracklistRenderer?.captionTracks)) {
-      // captionTracks が無い場合は ytInitialPlayerResponse から取り直す
-      const ytInitialPlayerResponseElement = getFirstSnapshotNode(YOUTUBE_UI_SELECTORS.initialPlayerResponseXPath);
-      if(!ytInitialPlayerResponseElement){
-        return undefined;
-      }
-      const ytInitialPlayerResponseCode = ytInitialPlayerResponseElement.innerText.replace("var ytInitialPlayerResponse = ","").replace(/};var .*/, '}');
-      const ytInitialPlayerResponseObject = JSON.parse(ytInitialPlayerResponseCode);
-      return ytInitialPlayerResponseObject;
-    }
-    return resData;
-  }catch(err){
-    debugLog("GetYoutubeiV1PlayerData got error", err, ytCfgJSON);
-  }
-  return undefined;
-}
-
-// ytplayer.config.args.player_response の中に含まれている字幕の情報から
-// 対象のロケールにおける(最適な)字幕データを取得するためのURLを生成します。
-async function GetCaptionDataUrl(player_response_obj){
-  // 用意されている字幕でターゲットとなるロケールの物があればそれを使います
-  let captionTracks = player_response_obj?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  if(!captionTracks){ return; }
-  let playLocaleCaptionBaseUrl = captionTracks?.filter(obj => obj?.languageCode == state.playLocale)[0]?.baseUrl;
-  if(playLocaleCaptionBaseUrl){
-    return playLocaleCaptionBaseUrl + "&fmt=json3";
-  }
-
-  // なさそうなら、captionTracks の先頭の物から対象のロケールに書き換えた物を取得するようにします。
-  let baseUrl = captionTracks[0]?.baseUrl;
-  if(!baseUrl){ debugLog("can not get baseUrl", player_response_obj); return; }
-  let origUrl = baseUrl.replace(/,/g, "%2C");
-  return origUrl + "&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=" + state.playLocale;
 }
 
 // fetch する前に対象URLが youtube.com のものである事を確認します。
@@ -295,8 +236,7 @@ function clearCaptionData(){
 }
 
 function updateCaptionFetchMetadata(playerResponse){
-  // SPA遷移時、GetYoutubeiV1PlayerData は captionTracks が無いと DOM 内の
-  // ytInitialPlayerResponse(前の動画のまま)にフォールバックすることがある。
+  // SPA遷移時、DOM の ytInitialPlayerResponse が前の動画のまま残っていることがある。
   // その場合 videoDetails は前の動画のものなので、誤った videoLengthSeconds を採ると
   // IsValidVideoDuration が永久に false になり発話に到達できなくなる。
   // よって player_response が「今見ている動画のもの」でない限りメタデータは信用しない。
@@ -312,13 +252,6 @@ function updateCaptionFetchMetadata(playerResponse){
 
 function shouldSkipCaptionFetchByLocale(storageResult){
   return state.guessedOriginalCaptionLanguage == state.playLocale && storageResult?.isDisableSpeechIfSameLocaleVideo;
-}
-
-async function FetchCaptionDataFromPlayerResponse(){
-  const playerResponse = await GetYoutubeiV1PlayerData();
-  updateCaptionFetchMetadata(playerResponse);
-  const url = await GetCaptionDataUrl(playerResponse);
-  return fetchYoutubeJson(url);
 }
 
 async function FetchCaptionDataFromTimedText(videoId){
@@ -353,28 +286,21 @@ async function FetchCaptionData(isForceFetch = false){
     // IsValidVideoDuration が永久に false を返して発話に到達できなくなる。
     // -1 に戻しておくと、更新できなかった場合でも字幕の最終時刻ベースで判定される。
     state.videoLengthSeconds = -1;
-    let json = undefined;
     const storageResult = await getStorageSync(CAPTION_FETCH_STORAGE_KEYS);
     if(!isSpeechEnabled(storageResult)) {
       return undefined;
     }
-    try {
-      json = await FetchCaptionDataFromPlayerResponse();
-      if(shouldSkipCaptionFetchByLocale(storageResult)){
-        clearCaptionData();
-        return undefined;
-      }
-    }catch(err){
-      debugLog("CS: FetchCaptionData phase 1 captionData JSON read failed. catch error:", err);
+    // メタデータ(動画長・推定言語)は DOM の ytInitialPlayerResponse から読む。
+    updateCaptionFetchMetadata(GetPlayerResponseFromDom());
+    if(shouldSkipCaptionFetchByLocale(storageResult)){
+      clearCaptionData();
+      return undefined;
     }
-    debugLog("FetchCaptionData first try json:", json);
-    debugLog("CS: accessUrlList: ", state.accessUrlList, "excludeAccessUrlList:", state.excludeAccessUrlList);
-    if (json === undefined) {
-      json = await FetchCaptionDataFromTimedText(videoId);
-      if(json === undefined) {
-        clearCaptionData();
-        return undefined;
-      }
+    // 字幕本文は timedtext 経路でのみ取得する(player 由来のURLは po_token 必須で取得できないため)。
+    const json = await FetchCaptionDataFromTimedText(videoId);
+    if(json === undefined) {
+      clearCaptionData();
+      return undefined;
     }
     applyFetchedCaptionData(json, videoId);
     if (storageResult?.isSpeechWithoutSyncEnabled) {

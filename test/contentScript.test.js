@@ -98,8 +98,6 @@ function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=
 module.exports = {
   state,
   GetVideoId,
-  GenerateYoutubeiV1PlayerPostPayload,
-  GetCaptionDataUrl,
   CaptionDataToTimeDict,
   IsTargetUrlWithOption,
   getTimedTextUrl,
@@ -169,41 +167,6 @@ test("GetVideoId extracts watch, embed, and live ids", () => {
   assert.equal(loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc123&list=xyz" }).exports.GetVideoId(), "abc123");
   assert.equal(loadContentScriptEnvironment({ href: "https://www.youtube.com/embed/embed123?start=10" }).exports.GetVideoId(), "embed123");
   assert.equal(loadContentScriptEnvironment({ href: "https://www.youtube.com/live/live123?feature=share" }).exports.GetVideoId(), "live123");
-});
-
-test("GenerateYoutubeiV1PlayerPostPayload uses video id from the current url", () => {
-  const mod = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=payload123" }).exports;
-  const payload = JSON.parse(mod.GenerateYoutubeiV1PlayerPostPayload({ INNERTUBE_CONTEXT: { client: { hl: "ja" } } }));
-  assert.deepEqual(payload, {
-    context: { client: { hl: "ja" } },
-    videoId: "payload123"
-  });
-});
-
-test("GetCaptionDataUrl prefers an exact locale track and falls back to translated captions", async () => {
-  const mod = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=video123" }).exports;
-  const directUrl = await mod.GetCaptionDataUrl({
-    captions: {
-      playerCaptionsTracklistRenderer: {
-        captionTracks: [
-          { languageCode: "ja-JP", baseUrl: "https://example.com/direct" },
-          { languageCode: "en", baseUrl: "https://example.com/fallback" }
-        ]
-      }
-    }
-  });
-  assert.equal(directUrl, "https://example.com/direct&fmt=json3");
-
-  const fallbackUrl = await mod.GetCaptionDataUrl({
-    captions: {
-      playerCaptionsTracklistRenderer: {
-        captionTracks: [
-          { languageCode: "en", baseUrl: "https://example.com/base,a" }
-        ]
-      }
-    }
-  });
-  assert.equal(fallbackUrl, "https://example.com/base%2Ca&fmt=json3&xorb=2&xobt=3&xovt=3&tlang=ja-JP");
 });
 
 test("CaptionDataToTimeDict strips supported HTML tags and skips blank captions", () => {
