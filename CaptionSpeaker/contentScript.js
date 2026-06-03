@@ -405,16 +405,17 @@ function VideoLengthSecondsFromPlayerResponse(player_response){
   return player_response?.videoDetails?.lengthSeconds;
 }
 
+// 動画の「元の話し言葉」の言語コードを推定します。
+// 自動生成字幕(kind=="asr")があればその言語を、無ければ先頭トラックの言語を返します。
+// (旧実装は filter() の戻り値が空配列でも truthy のため、先頭トラックへのフォールバックに
+//  到達できず、asr の無い動画で undefined を返していた不具合があった)
 function GuessVideoAutoTranslateOriginalLanguage(player_response){
-  let captionTracks = player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  let autoDetectedCaption = captionTracks?.filter(x=> x["kind"] == "asr");
-  if(autoDetectedCaption){
-    return autoDetectedCaption[0]?.languageCode;
+  const captionTracks = player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if(!captionTracks || captionTracks.length === 0){
+    return undefined;
   }
-  if(captionTracks){
-    return captionTracks[0]?.languageCode;
-  }
-  return undefined;
+  const asrTrack = captionTracks.find(track => track.kind === "asr");
+  return (asrTrack ?? captionTracks[0])?.languageCode;
 }
 
 // 字幕のデータを後で使いやすいように加工しておきます。

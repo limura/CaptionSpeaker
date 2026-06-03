@@ -375,19 +375,36 @@ test("VideoLengthSecondsFromPlayerResponse reads videoDetails.lengthSeconds", ()
   assert.equal(mod.VideoLengthSecondsFromPlayerResponse(undefined), undefined);
 });
 
+function playerResponseWithTracks(captionTracks){
+  return { captions: { playerCaptionsTracklistRenderer: { captionTracks } } };
+}
+
 test("GuessVideoAutoTranslateOriginalLanguage prefers the asr track", () => {
   const mod = loadContentScriptEnvironment().exports;
-  const langCode = mod.GuessVideoAutoTranslateOriginalLanguage({
-    captions: {
-      playerCaptionsTracklistRenderer: {
-        captionTracks: [
-          { languageCode: "ja" },
-          { kind: "asr", languageCode: "en" }
-        ]
-      }
-    }
-  });
-  assert.equal(langCode, "en");
-  // 字幕トラックが無ければ undefined
+  assert.equal(
+    mod.GuessVideoAutoTranslateOriginalLanguage(playerResponseWithTracks([
+      { languageCode: "ja" },
+      { kind: "asr", languageCode: "en" }
+    ])),
+    "en"
+  );
+});
+
+test("GuessVideoAutoTranslateOriginalLanguage falls back to the first track when no asr track exists", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  // asr が無い場合は先頭トラックの言語にフォールバックする(旧実装は undefined を返していた不具合)
+  assert.equal(
+    mod.GuessVideoAutoTranslateOriginalLanguage(playerResponseWithTracks([
+      { languageCode: "ja" },
+      { languageCode: "fr" }
+    ])),
+    "ja"
+  );
+});
+
+test("GuessVideoAutoTranslateOriginalLanguage returns undefined without caption tracks", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage(playerResponseWithTracks([])), undefined);
   assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage({}), undefined);
+  assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage(undefined), undefined);
 });
