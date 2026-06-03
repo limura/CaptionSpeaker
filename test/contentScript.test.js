@@ -112,7 +112,8 @@ module.exports = {
   setTimedTextLanguage,
   FormatTimeFromMillisecond,
   GuessVideoAutoTranslateOriginalLanguage,
-  VideoLengthSecondsFromPlayerResponse
+  VideoLengthSecondsFromPlayerResponse,
+  updateCaptionFetchMetadata
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
@@ -407,4 +408,32 @@ test("GuessVideoAutoTranslateOriginalLanguage returns undefined without caption 
   assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage(playerResponseWithTracks([])), undefined);
   assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage({}), undefined);
   assert.equal(mod.GuessVideoAutoTranslateOriginalLanguage(undefined), undefined);
+});
+
+// SPA遷移で player_response が前の動画のままになると、videoLengthSeconds に別動画の長さが
+// 入って IsValidVideoDuration が false 固着し、切替先の動画が発話しなくなる不具合への対策。
+test("updateCaptionFetchMetadata ignores player_response for a different video", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=current1" });
+  const mod = loaded.exports;
+  mod.state.videoLengthSeconds = -1;
+  // 別動画(SPA遷移前の動画)の player_response → videoLengthSeconds を汚染しない
+  mod.updateCaptionFetchMetadata({ videoDetails: { videoId: "previous9", lengthSeconds: "1468" } });
+  assert.equal(mod.state.videoLengthSeconds, -1);
+});
+
+test("updateCaptionFetchMetadata adopts length only for the current video", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=current1" });
+  const mod = loaded.exports;
+  mod.state.videoLengthSeconds = -1;
+  // 現在の動画の player_response → videoLengthSeconds を採用
+  mod.updateCaptionFetchMetadata({ videoDetails: { videoId: "current1", lengthSeconds: "838" } });
+  assert.equal(mod.state.videoLengthSeconds, "838");
+});
+
+test("updateCaptionFetchMetadata leaves length untouched when player_response is missing", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=current1" });
+  const mod = loaded.exports;
+  mod.state.videoLengthSeconds = -1;
+  mod.updateCaptionFetchMetadata(undefined);
+  assert.equal(mod.state.videoLengthSeconds, -1);
 });

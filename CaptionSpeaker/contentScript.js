@@ -295,6 +295,14 @@ function clearCaptionData(){
 }
 
 function updateCaptionFetchMetadata(playerResponse){
+  // SPA遷移時、GetYoutubeiV1PlayerData は captionTracks が無いと DOM 内の
+  // ytInitialPlayerResponse(前の動画のまま)にフォールバックすることがある。
+  // その場合 videoDetails は前の動画のものなので、誤った videoLengthSeconds を採ると
+  // IsValidVideoDuration が永久に false になり発話に到達できなくなる。
+  // よって player_response が「今見ている動画のもの」でない限りメタデータは信用しない。
+  if(playerResponse?.videoDetails?.videoId !== GetVideoId()){
+    return;
+  }
   const lengthSeconds = VideoLengthSecondsFromPlayerResponse(playerResponse);
   if(lengthSeconds > 0){
     state.videoLengthSeconds = lengthSeconds;
