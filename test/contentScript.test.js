@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=video123", evaluateResult, querySelectorMap } = {}) {
+function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=video123", evaluateResult, querySelectorMap, querySelectorAllMap } = {}) {
   const codePath = path.join(__dirname, "..", "CaptionSpeaker", "contentScript.js");
   const source = fs.readFileSync(codePath, "utf8");
 
@@ -23,8 +23,8 @@ function loadContentScriptEnvironment({ href = "https://www.youtube.com/watch?v=
     querySelector(selector) {
       return querySelectorMap?.[selector] ?? null;
     },
-    querySelectorAll() {
-      return [];
+    querySelectorAll(selector) {
+      return querySelectorAllMap?.[selector] ?? [];
     }
   };
 
@@ -113,7 +113,21 @@ module.exports = {
   FormatTimeFromMillisecond,
   GuessVideoAutoTranslateOriginalLanguage,
   VideoLengthSecondsFromPlayerResponse,
-  updateCaptionFetchMetadata
+  updateCaptionFetchMetadata,
+  IsYoutubeUrl,
+  clearCaptionData,
+  shouldSkipCaptionFetchByLocale,
+  applyFetchedCaptionData,
+  consumeContentScriptLoadDelay,
+  StorageResultToVoiceSettings,
+  volumeOverride,
+  volumeRecover,
+  ensureOriginalVolume,
+  getVideoPlaybackState,
+  onUrlAccessed,
+  shouldSkipTimedTextCollection,
+  GetYtpVolumePanelValue,
+  CheckCaptionIsDisplaying
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
@@ -436,4 +450,241 @@ test("updateCaptionFetchMetadata leaves length untouched when player_response is
   mod.state.videoLengthSeconds = -1;
   mod.updateCaptionFetchMetadata(undefined);
   assert.equal(mod.state.videoLengthSeconds, -1);
+});
+
+// --- セキュリティガード: 外部由来URLを fetch 前に youtube.com かどうか確認する(F-4) ---
+
+test("IsYoutubeUrl accepts only https youtube.com hosts", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.IsYoutubeUrl("https://www.youtube.com/api/timedtext?v=a"), true);
+  assert.equal(mod.IsYoutubeUrl("https://youtube.com/watch?v=a"), true);
+  // 相対URLは現在のページ(youtube.com)を基準に解決されるので true
+  assert.equal(mod.IsYoutubeUrl("/api/timedtext?v=a"), true);
+});
+
+test("IsYoutubeUrl rejects non-https, other hosts, and lookalike subdomains", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.IsYoutubeUrl("http://www.youtube.com/a"), false);   // https でない
+  assert.equal(mod.IsYoutubeUrl("https://evil.com/a"), false);          // 別ホスト
+  assert.equal(mod.IsYoutubeUrl("https://www.youtube.com.evil.com/a"), false); // なりすまし
+  assert.equal(mod.IsYoutubeUrl("https://notyoutube.com/a"), false);
+  assert.equal(mod.IsYoutubeUrl("javascript:alert(1)"), false);         // 危険なスキーム
+  assert.equal(mod.IsYoutubeUrl("ftp://youtube.com/a"), false);         // https 以外のスキーム
+});
+
+// --- 字幕辞書/状態系のヘルパー ---
+
+test("clearCaptionData resets the caption dictionary", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  mod.state.captionData = { "0:01": { segment: "x" } };
+  mod.clearCaptionData();
+  assert.equal(Object.keys(mod.state.captionData).length, 0);
+});
+
+test("applyFetchedCaptionData stores the caption dict and current video id", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  mod.applyFetchedCaptionData({ events: [{ tStartMs: 1000, segs: [{ utf8: "hello" }] }] }, "vid9");
+  assert.equal(mod.state.currentVideoId, "vid9");
+  assert.deepEqual(Object.keys(mod.state.captionData), ["0:01"]);
+  assert.equal(mod.state.captionData["0:01"].segment, "hello");
+});
+
+test("shouldSkipCaptionFetchByLocale only skips when guessed lang matches and option is on", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  mod.state.playLocale = "ja";
+  mod.state.guessedOriginalCaptionLanguage = "ja";
+  assert.equal(mod.shouldSkipCaptionFetchByLocale({ isDisableSpeechIfSameLocaleVideo: true }), true);
+  assert.equal(mod.shouldSkipCaptionFetchByLocale({ isDisableSpeechIfSameLocaleVideo: false }), false);
+  mod.state.guessedOriginalCaptionLanguage = "en";
+  assert.equal(mod.shouldSkipCaptionFetchByLocale({ isDisableSpeechIfSameLocaleVideo: true }), false);
+});
+
+test("consumeContentScriptLoadDelay returns the elapsed seconds once, then clears", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  // 未設定なら 0.0
+  mod.state.contentScriptLoadTime = undefined;
+  assert.equal(mod.consumeContentScriptLoadDelay(), 0.0);
+  // 約2秒前に読み込まれた想定 → 正の遅延を返し、読み取り後は undefined になる
+  mod.state.contentScriptLoadTime = new Date(Date.now() - 2000);
+  const delay = mod.consumeContentScriptLoadDelay();
+  assert.ok(delay >= 1.0 && delay < 10, `delay ${delay} should be a few seconds`);
+  assert.equal(mod.state.contentScriptLoadTime, undefined);
+});
+
+test("StorageResultToVoiceSettings applies defaults when nothing is stored", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const setting = mod.StorageResultToVoiceSettings({});
+  assert.equal(setting.voicePitch, 1.0);
+  assert.equal(setting.voiceRate, 1.6);
+  assert.equal(setting.voiceVolume, 1.0);
+  assert.equal(setting.voiceVoice, undefined);
+  assert.equal(setting.isStopIfNewSpeech, false);
+});
+
+test("StorageResultToVoiceSettings carries stored values through", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const setting = mod.StorageResultToVoiceSettings({ pitch: 0.8, rate: 2.0, volume: 0.3, isStopIfNewSpeech: 1 });
+  assert.equal(setting.voicePitch, 0.8);
+  assert.equal(setting.voiceRate, 2.0);
+  assert.equal(setting.voiceVolume, 0.3);
+  assert.equal(setting.isStopIfNewSpeech, true);
+});
+
+// --- 元動画の音量上書き(開始+1/終了-1 の参照カウント) ---
+
+test("volumeOverride/volumeRecover use a reference count and clamp volume to [0,1]", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const video = { volume: 1 };
+  mod.state.overrideVolumeCount = 0;
+
+  mod.volumeOverride(video, 0.8, 0.5);   // 0.8 * 0.5 = 0.4
+  assert.equal(mod.state.overrideVolumeCount, 1);
+  assert.equal(video.volume, 0.4);
+
+  mod.volumeOverride(video, 0.8, 2.0);   // 0.8 * 2.0 = 1.6 → 1 にクランプ
+  assert.equal(mod.state.overrideVolumeCount, 2);
+  assert.equal(video.volume, 1);
+
+  mod.volumeRecover(video, 0.8);         // カウントが残っている間は戻さない
+  assert.equal(mod.state.overrideVolumeCount, 1);
+  assert.equal(video.volume, 1);
+
+  mod.volumeRecover(video, 0.8);         // 0 以下で元の音量へ戻す
+  assert.equal(mod.state.overrideVolumeCount, 0);
+  assert.equal(video.volume, 0.8);
+});
+
+test("ensureOriginalVolume captures the volume only on first call", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  mod.state.originalVolume = undefined;
+  mod.ensureOriginalVolume({ volume: 0.5 });
+  assert.equal(mod.state.originalVolume, 0.5);
+  // 2回目以降は上書きしない
+  mod.ensureOriginalVolume({ volume: 0.9 });
+  assert.equal(mod.state.originalVolume, 0.5);
+});
+
+test("getVideoPlaybackState reports whether the duration is known", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const known = mod.getVideoPlaybackState({ currentTime: 5, duration: 100 });
+  assert.equal(known.currentTime, 5);
+  assert.equal(known.duration, 100);
+  assert.equal(known.isDurationKnown, true);
+
+  const unknown = mod.getVideoPlaybackState({ currentTime: 5, duration: NaN });
+  assert.equal(unknown.isDurationKnown, false);
+});
+
+// --- background から渡される timedtext URL の収集 ---
+
+test("onUrlAccessed collects timedtext urls and ignores others/excluded", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  mod.state.accessUrlList = [];
+  mod.state.excludeAccessUrlList = [];
+
+  mod.onUrlAccessed("https://www.youtube.com/api/timedtext?v=a&lang=en");
+  assert.deepEqual(mod.state.accessUrlList, ["https://www.youtube.com/api/timedtext?v=a&lang=en"]);
+
+  // timedtext でないURLは無視
+  mod.onUrlAccessed("https://www.youtube.com/watch?v=a");
+  assert.equal(mod.state.accessUrlList.length, 1);
+
+  // 除外リストにあるURLは収集しない
+  mod.state.excludeAccessUrlList = ["https://www.youtube.com/api/timedtext?v=b"];
+  mod.onUrlAccessed("https://www.youtube.com/api/timedtext?v=b");
+  assert.equal(mod.state.accessUrlList.length, 1);
+});
+
+// --- CaptionDataToTimeDict の追加ケース ---
+
+test("CaptionDataToTimeDict concatenates segments and strips multiple inline tags", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  const dict = mod.CaptionDataToTimeDict({
+    events: [
+      { tStartMs: 0, segs: [{ utf8: "<b>a</b>" }, { utf8: "b" }, { utf8: "<i>c</i>" }] }
+    ]
+  });
+  assert.equal(dict["0:00"].segment, "abc");
+});
+
+test("CaptionDataToTimeDict returns undefined when events are missing", () => {
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.CaptionDataToTimeDict({}), undefined);
+  assert.equal(mod.CaptionDataToTimeDict(undefined), undefined);
+});
+
+// --- DOM 依存: document.evaluate(XPath) の戻りを差し替えて検証する ---
+// xpath に含まれる部分文字列でノードを引けるようにする評価モックを作る。
+function evaluateByXPathSubstring(pairs) {
+  return (xpath) => {
+    for (const [needle, node] of pairs) {
+      if (xpath.includes(needle)) {
+        return { snapshotItem: () => node };
+      }
+    }
+    return { snapshotItem: () => null };
+  };
+}
+
+function attrNode(attrs) {
+  return { getAttribute: (name) => (name in attrs ? attrs[name] : null) };
+}
+
+test("shouldSkipTimedTextCollection skips when an ad is playing", () => {
+  const mod = loadContentScriptEnvironment({
+    querySelectorAllMap: { "#ytd-player .video-ads": [{ childNodes: { length: 1 } }] }
+  }).exports;
+  assert.equal(mod.shouldSkipTimedTextCollection("v"), true);
+});
+
+test("shouldSkipTimedTextCollection skips when there is no subtitle button", () => {
+  // 字幕ボタンの XPath に対して null を返す(=ボタンが無い)
+  const mod = loadContentScriptEnvironment().exports;
+  assert.equal(mod.shouldSkipTimedTextCollection("v"), true);
+});
+
+test("shouldSkipTimedTextCollection skips when the subtitle button is not a real toggle (no captions)", () => {
+  // aria-pressed 属性が無い = 字幕が無い動画
+  const mod = loadContentScriptEnvironment({
+    evaluateResult: evaluateByXPathSubstring([["ytp-subtitles-button", attrNode({})]])
+  }).exports;
+  assert.equal(mod.shouldSkipTimedTextCollection("v"), true);
+});
+
+test("shouldSkipTimedTextCollection does not skip when captions are available", () => {
+  // aria-pressed があり、広告も無く、字幕ボタンも存在する → 収集してよい
+  const mod = loadContentScriptEnvironment({
+    evaluateResult: evaluateByXPathSubstring([["ytp-subtitles-button", attrNode({ "aria-pressed": "false" })]])
+  }).exports;
+  assert.equal(mod.shouldSkipTimedTextCollection("v"), false);
+});
+
+test("CheckCaptionIsDisplaying reflects the subtitle button aria-pressed state", () => {
+  const on = loadContentScriptEnvironment({
+    evaluateResult: evaluateByXPathSubstring([["ytp-subtitles-button", attrNode({ "aria-pressed": "true" })]])
+  }).exports;
+  assert.equal(on.CheckCaptionIsDisplaying(), true);
+
+  const off = loadContentScriptEnvironment({
+    evaluateResult: evaluateByXPathSubstring([["ytp-subtitles-button", attrNode({ "aria-pressed": "false" })]])
+  }).exports;
+  assert.equal(off.CheckCaptionIsDisplaying(), false);
+
+  // ボタンが無ければ false
+  assert.equal(loadContentScriptEnvironment().exports.CheckCaptionIsDisplaying(), false);
+});
+
+test("GetYtpVolumePanelValue reads the HTML volume panel and clamps to [0,1]", () => {
+  const half = loadContentScriptEnvironment({
+    evaluateResult: evaluateByXPathSubstring([["ytp-volume-area", { value: 50 }]])
+  }).exports;
+  assert.equal(half.GetYtpVolumePanelValue(0.7), 0.5);
+
+  const over = loadContentScriptEnvironment({
+    evaluateResult: evaluateByXPathSubstring([["ytp-volume-area", { value: 150 }]])
+  }).exports;
+  assert.equal(over.GetYtpVolumePanelValue(0.7), 1);
+
+  // パネルが読めない(ノード無し)場合は fallback を返す
+  assert.equal(loadContentScriptEnvironment().exports.GetYtpVolumePanelValue(0.7), 0.7);
 });

@@ -7,12 +7,15 @@ const vm = require("node:vm");
 // options.js を vm で読み込み、純粋な関数群と設定キーの定数を取り出して検証する。
 // options.js は読み込み時に getElementById / querySelectorAll / speechSynthesis に
 // 触れるため、それらを最小限モックしておく。
-function loadOptionsEnvironment() {
+function loadOptionsEnvironment({ elements, i18nMessages } = {}) {
   const codePath = path.join(__dirname, "..", "CaptionSpeaker", "options.js");
   const source = fs.readFileSync(codePath, "utf8");
 
   const document = {
-    getElementById() {
+    getElementById(id) {
+      if (elements && id in elements) {
+        return elements[id];
+      }
       // 読み込み時の configureShortcuts.onclick 代入などを通すためのダミー要素
       return { onclick: null, addEventListener() {}, style: {} };
     },
@@ -22,7 +25,7 @@ function loadOptionsEnvironment() {
   };
 
   const chrome = {
-    i18n: { getMessage() { return ""; } },
+    i18n: { getMessage(key) { return i18nMessages?.[key] ?? ""; } },
     storage: { sync: { get() {}, set() {}, remove() {} } },
     runtime: { sendMessage() {} },
     tabs: { update() {} }
@@ -55,7 +58,12 @@ module.exports = {
   getVoiceLangueges,
   filterVoiceForLang,
   getVoiceNames,
-  searchVoiceFromName
+  searchVoiceFromName,
+  selectSelected,
+  getTestText,
+  getLang,
+  getVoice,
+  getCheckboxFlag
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "options.js" });
@@ -105,4 +113,60 @@ test("ALL_SETTING_KEYS contains every boolean setting and the value settings", (
   }
   // 以前リセット漏れしていた isSpeechWithoutSyncEnabled が含まれていること
   assert.ok(mod.ALL_SETTING_KEYS.includes("isSpeechWithoutSyncEnabled"));
+});
+
+test("selectSelected marks the option whose value matches", () => {
+  const mod = loadOptionsEnvironment();
+  const select = { options: [
+    { value: "a", selected: false },
+    { value: "b", selected: false },
+    { value: "c", selected: false }
+  ] };
+  mod.selectSelected(select, "b");
+  assert.equal(select.options[0].selected, false);
+  assert.equal(select.options[1].selected, true);
+  assert.equal(select.options[2].selected, false);
+});
+
+test("getTestText falls back from textarea to i18n to a built-in default", () => {
+  // 入力がある場合はそれを使う
+  const typed = loadOptionsEnvironment({ elements: { testText: { value: "hello" } } });
+  assert.equal(typed.getTestText(), "hello");
+
+  // 入力が空なら i18n メッセージを使う
+  const i18n = loadOptionsEnvironment({
+    elements: { testText: { value: "" } },
+    i18nMessages: { OptionsPageSampleTextValue: "サンプル文" }
+  });
+  assert.equal(i18n.getTestText(), "サンプル文");
+
+  // どちらも空なら組み込みの既定文(空でない)を返す
+  const fallback = loadOptionsEnvironment({ elements: { testText: { value: "" } } });
+  assert.ok(fallback.getTestText().length > 0);
+});
+
+test("getLang returns undefined for DEFAULT and the value otherwise", () => {
+  const def = loadOptionsEnvironment({ elements: { lang: { value: "DEFAULT" } } });
+  assert.equal(def.getLang([]), undefined);
+
+  const ja = loadOptionsEnvironment({ elements: { lang: { value: "ja-JP" } } });
+  assert.equal(ja.getLang([]), "ja-JP");
+});
+
+test("getVoice resolves the selected voice by name unless lang is DEFAULT", () => {
+  const voices = [{ lang: "ja-JP", name: "Haruka" }, { lang: "en-US", name: "Alice" }];
+
+  const def = loadOptionsEnvironment({ elements: { lang: { value: "DEFAULT" }, voice: { value: "Haruka" } } });
+  assert.equal(def.getVoice(voices), undefined);
+
+  const picked = loadOptionsEnvironment({ elements: { lang: { value: "ja-JP" }, voice: { value: "Haruka" } } });
+  assert.equal(picked.getVoice(voices), voices[0]);
+});
+
+test("getCheckboxFlag returns 1 for checked and 0 for unchecked", () => {
+  const on = loadOptionsEnvironment({ elements: { isStopIfNewSpeech: { checked: true } } });
+  assert.equal(on.getCheckboxFlag("isStopIfNewSpeech"), 1);
+
+  const off = loadOptionsEnvironment({ elements: { isStopIfNewSpeech: { checked: false } } });
+  assert.equal(off.getCheckboxFlag("isStopIfNewSpeech"), 0);
 });

@@ -13,8 +13,9 @@ function loadBackgroundEnvironment() {
 
   const noop = () => {};
   const listener = { addListener: noop };
+  const setIconCalls = [];
   const chrome = {
-    action: { onClicked: listener, setIcon: noop },
+    action: { onClicked: listener, setIcon: (arg) => setIconCalls.push(arg) },
     tabs: { onActivated: listener, query: noop, sendMessage: noop },
     runtime: { onMessage: listener, openOptionsPage: noop, sendMessage: noop },
     commands: { onCommand: listener },
@@ -31,14 +32,14 @@ function loadBackgroundEnvironment() {
   };
 
   const wrapped = `${source}
-module.exports = { shouldOpenOptionsForLegacyData };`;
+module.exports = { shouldOpenOptionsForLegacyData, AssignPageActionIcon };`;
 
   vm.runInNewContext(wrapped, context, { filename: "background.js" });
-  return context.module.exports;
+  return { exports: context.module.exports, setIconCalls };
 }
 
 test("shouldOpenOptionsForLegacyData opens options for missing or invalid rate", () => {
-  const mod = loadBackgroundEnvironment();
+  const { exports: mod } = loadBackgroundEnvironment();
   // 未設定/不正値 → 設定ページを開く(true)
   assert.equal(mod.shouldOpenOptionsForLegacyData({}), true);
   assert.equal(mod.shouldOpenOptionsForLegacyData({ rate: 1.6 }), true);   // 数値(文字列でない)
@@ -47,4 +48,14 @@ test("shouldOpenOptionsForLegacyData opens options for missing or invalid rate",
   // 正常な文字列の rate → 開かない(false)
   assert.equal(mod.shouldOpenOptionsForLegacyData({ rate: "1.6" }), false);
   assert.equal(mod.shouldOpenOptionsForLegacyData({ rate: "10" }), false);
+});
+
+test("AssignPageActionIcon picks the light icon when enabled and dark when disabled", () => {
+  const { exports: mod, setIconCalls } = loadBackgroundEnvironment();
+  mod.AssignPageActionIcon(1, true);
+  mod.AssignPageActionIcon(1, false);
+  mod.AssignPageActionIcon(1, undefined); // 未設定は既定で有効(明アイコン)
+  assert.equal(setIconCalls[0].path["19"], "icon/Icon19.png");
+  assert.equal(setIconCalls[1].path["19"], "icon/IconDark19.png");
+  assert.equal(setIconCalls[2].path["19"], "icon/Icon19.png");
 });
