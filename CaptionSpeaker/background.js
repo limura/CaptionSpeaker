@@ -90,26 +90,27 @@ chrome.commands.onCommand.addListener(function(command) {
 });
 
 // Version 1.* の頃のデータが Version 2.* で manifest v3 に変わったことで読み込めなくなっている場合があるのでそういう感じの物を検知したり、クリーンインストールした時とかには設定ページを強制的に開くようにします。
+// rate が「未設定」「文字列でない」「0以下」「10超」のいずれかなら、不正/未初期化とみなして設定ページを開きます。
+function shouldOpenOptionsForLegacyData(data){
+  return !("rate" in data) || typeof(data["rate"]) != "string" || Number(data["rate"]) <= 0 || Number(data["rate"]) > 10;
+}
 chrome.storage.sync.get(["rate"], (data)=>{
-  if(!("rate" in data) || typeof(data["rate"]) != "string" || Number(data["rate"]) <= 0 || Number(data["rate"]) > 10){
+  if(shouldOpenOptionsForLegacyData(data)){
     chrome.runtime.openOptionsPage();
   }
 });
 
 // そのタブから読み込まれたURLをcontent scriptに通知します。
-//chrome.webRequest.onBeforeRequest.addListener(
 chrome.webRequest.onCompleted.addListener(
   function (details) {
     const { tabId, url, statusCode } = details;
-	if (statusCode != 200) { return; }
+    if (statusCode != 200) { return; }
 
     // tabId -1 は拡張機能や非タブのリクエストなので除外
     if (tabId >= 0) {
-	 if (!url.includes('https://www.youtube.com/api/timedtext')) {
-	  return;
-	 }
-      //console.log(`Tab ${tabId} accessed: ${url}`);
-
+      if (!url.includes('https://www.youtube.com/api/timedtext')) {
+        return;
+      }
       chrome.tabs.sendMessage(tabId, {
         type: "url_accessed",
         url: url
