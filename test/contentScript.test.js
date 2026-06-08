@@ -143,6 +143,7 @@ module.exports = {
   CheckVideoCurrentTime,
   StartVideoTimeChecker,
   StopVideoTimeChecker,
+  handleEnabledChange,
   InitializeScreenObserver,
   KickToplevelObserver,
   SpeechAllWithoutSync,
@@ -852,6 +853,37 @@ test("StopVideoTimeChecker clears the scheduled timer id", () => {
   assert.deepEqual(cleared, [777]);
 });
 
+test("StartVideoTimeChecker は既に動作中なら二重に起動しない(タイマー多重化防止)", () => {
+  const scheduled = [];
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=abc",
+    setTimeoutImpl: (fn, ms) => { scheduled.push(ms); return 1; },
+    clearTimeoutImpl: () => {}
+  });
+  loaded.exports.StartVideoTimeChecker();
+  loaded.exports.StartVideoTimeChecker();
+  loaded.exports.StartVideoTimeChecker();
+  assert.deepEqual(scheduled, [250]); // 何度呼んでもタイマーは1つだけ
+});
+
+// 視聴ページで広告再生中などに初回の字幕取得が失敗しても、時間チェッカーが取得を
+// リトライして自動回復すること(埋め込みでは動くのに視聴ページで発話しない不具合の再発防止)
+test("時間チェッカーは現在動画の字幕が未取得ならリトライ取得する", async () => {
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/watch?v=vidX",
+    storageResult: {},
+    setTimeoutImpl: () => 1,        // 自己再スケジュールは無視して tick を1回だけ走らせる
+    clearTimeoutImpl: () => {},
+    fetchImpl: async () => mockResponse({ body: '{"events":[{"tStartMs":0,"segs":[{"utf8":"hello"}]}]}' })
+  });
+  // player が観測済みの timedtext URL はあるが、字幕はまだ取り込まれていない状態
+  loaded.exports.state.accessUrlList = ["https://www.youtube.com/api/timedtext?v=vidX&lang=en"];
+  assert.notEqual(loaded.exports.state.currentVideoId, "vidX");
+  loaded.exports.StartVideoTimeChecker();
+  await new Promise((resolve) => setImmediate(resolve)); // FetchCaptionData の await を消化
+  assert.equal(loaded.exports.state.currentVideoId, "vidX"); // リトライで取得が成立した
+});
+
 // --- プレイヤー状態オブザーバ(screenObserver) ---
 
 const MOVIE_PLAYER_SELECTOR = "#movie_player[class*='html5-video-player']";
@@ -1000,6 +1032,26 @@ test("LoadBooleanSettings does not cancel when enabled", async () => {
   loaded.exports.state.speakTargetUrl = loaded.context.location.href;
   await loaded.exports.LoadBooleanSettings();
   assert.equal(loaded.speech.cancel, 0);
+});
+
+// 再生中にアイコンで OFF→ON した時、DOM 変化(ToplevelObserver の再発火)に頼らず
+// 字幕取得と時間チェッカーを起動できること。埋め込みプレイヤーでの発話不発の再発防止。
+test("handleEnabledChange(true) は埋め込みでも時間チェッカーを起動する", () => {
+  const scheduled = [];
+  const loaded = loadContentScriptEnvironment({
+    href: "https://www.youtube.com/embed/embedded123",
+    setTimeoutImpl: (fn, ms) => { scheduled.push(ms); return 1; },
+    clearTimeoutImpl: () => {}
+  });
+  loaded.exports.handleEnabledChange(true);
+  assert.deepEqual(scheduled, [250]); // 有効化だけで時間チェッカーが回り始める
+});
+
+test("handleEnabledChange(false) は再生中の発話を止める", () => {
+  const loaded = loadContentScriptEnvironment({ href: "https://www.youtube.com/watch?v=abc" });
+  loaded.exports.state.speakTargetUrl = loaded.context.location.href;
+  loaded.exports.handleEnabledChange(false);
+  assert.ok(loaded.speech.cancel >= 1);
 });
 
 // --- 対象URL判定(設定込み)の async ラッパー ---

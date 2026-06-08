@@ -749,19 +749,55 @@ chrome.runtime.onMessage.addListener(
 var ToplevelObserver = undefined;
 var VideoTimeCheckTimerID = undefined;
 
-function StartVideoTimeChecker(){
+// 250ms ごとに再生位置を確認して発話する本体。setTimeout で自分自身を繰り返し呼ぶ。
+function videoTimeCheckTick(){
   if(state.currentVideoId == GetVideoId()){
     CheckVideoCurrentTime().catch((e)=>{
       debugLog("CheckVideoCurrentTime got error. video time checker stop:", e);
       StopVideoTimeChecker();
     });
+  }else{
+    // 現在の動画の字幕がまだ読み込めていない場合は、取得を試み続ける。
+    // 初回の取得は広告の再生中(shouldSkipTimedTextCollection が真)・読み込み途中・
+    // DOM 変化が乏しい等の理由で失敗することがある。以前はその場合 ToplevelObserver の
+    // 再発火を待つしかなく、発火しなければ永久に発話が始まらなかった。
+    // ここで取得をリトライすることで、条件が整い次第(広告終了後など)自動的に
+    // 字幕取得・発話へ進めるようにする。取得成功までは currentVideoId が更新されないので
+    // このリトライが続き、成功したら上の通常経路へ移る。
+    UpdateCaptionData();
   }
-  VideoTimeCheckTimerID = setTimeout(StartVideoTimeChecker, 250);
+  VideoTimeCheckTimerID = setTimeout(videoTimeCheckTick, 250);
+}
+// 時間チェッカーを起動する。
+// 既に動作中(タイマーが生きている)なら何もしない。有効化・SPA遷移・設定変更など
+// 複数の経路から呼ばれてもタイマーが多重化しないようにするため。
+function StartVideoTimeChecker(){
+  if(VideoTimeCheckTimerID){ return; }
+  videoTimeCheckTick();
 }
 function StopVideoTimeChecker(){
   if(VideoTimeCheckTimerID){
     clearTimeout(VideoTimeCheckTimerID);
     VideoTimeCheckTimerID = undefined;
+  }
+}
+
+// アイコンのクリックやキーボードコマンドで有効/無効が切り替わった時の処理。
+// 有効化されたら、現在再生中の動画に対して字幕取得と時間チェッカーを起動する。
+//
+// 【経緯】以前は有効化時に専用の起動経路が無く、有効化後にたまたま DOM が変化して
+// ToplevelObserver が再発火するのを当てにして字幕取得・時間チェッカーを動かしていた。
+// そのため、DOM 変化が乏しい埋め込みプレイヤーや、読み込みが落ち着いた視聴ページでは
+// 「動画を再生したままアイコンで有効化しても発話が始まらない」ことがあった。
+// isEnabled の変化に直接反応して明示的に起動することで、この取りこぼしを無くす。
+function handleEnabledChange(isEnabled){
+  if(isEnabled){
+    // 有効化直後の発話を「今の再生位置」から始めたいので load time を測り直す。
+    state.contentScriptLoadTime = new Date();
+    UpdateCaptionData();
+    StartVideoTimeChecker();
+  }else{
+    stopSpeechWithSpeakCheck(speechSynthesis);
   }
 }
 
@@ -825,6 +861,12 @@ if(location.href.indexOf(YOUTUBE_ORIGIN_PREFIX) == 0){
 chrome.storage.onChanged.addListener((changes, namespace)=>{
   for(const [key, {oldValue, newValue}] of Object.entries(changes)){
     switch(key){
+      case "isEnabled":
+        // アイコン/キーボードでの有効・無効切り替えに直接反応する。
+        // background が isEnabled を書き換えると全フレームのこの onChanged が発火するため、
+        // DOM 変化が乏しい埋め込みプレイヤーのフレームでも確実に起動できる。
+        handleEnabledChange(newValue);
+        break;
       case "isDisableSpeechIfSameLocaleVideo":
         FetchCaptionData(true);
         return;
