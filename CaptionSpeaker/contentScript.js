@@ -124,6 +124,9 @@ function shouldSkipTimedTextCollection(videoId) {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// doubleClickWithDelay が字幕ボタンを連打し続ける上限回数(200ms間隔なので約3秒分)
+const DOUBLE_CLICK_MAX_RETRY = 15;
+
 function getStorageSync(keys = null){
   return new Promise(resolve => {
     chrome.storage.sync.get(keys, resolve);
@@ -670,14 +673,17 @@ async function doubleClickWithDelay(buttonElement) {
   buttonElement.click();
   await sleep(200);
   var ariaPressed = buttonElement.getAttribute('aria-pressed');
-  while(ariaPressed == null || ariaPressed == 'true'){
+  // click() が aria-pressed に反映されない状況(読み込み遅延など)が続いても無限にボタンを
+  // 連打し続けないよう、試行回数の上限を設ける。上限に達したら現状を諦めて先に進む。
+  for(var i = 0; i < DOUBLE_CLICK_MAX_RETRY && (ariaPressed == null || ariaPressed == 'true'); i++){
     if(ariaPressed != null){
       buttonElement.click();
     }
     await sleep(200);
     ariaPressed = buttonElement.getAttribute('aria-pressed');
   }
-  if(ariaPressed != initialAriaPressed) {
+  // 最終的な状態が不明(null)なままなら、憶測でクリックして状態を余計に壊さない。
+  if(ariaPressed != null && ariaPressed != initialAriaPressed) {
     buttonElement.click();
   }
   await sleep(100);

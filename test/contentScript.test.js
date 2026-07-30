@@ -150,7 +150,9 @@ module.exports = {
   CheckPlayLocaleUpdate,
   LoadBooleanSettings,
   IsTargetUrl,
-  attachVolumeRecoveryHandlers
+  attachVolumeRecoveryHandlers,
+  doubleClickWithDelay,
+  DOUBLE_CLICK_MAX_RETRY
 };`;
 
   vm.runInNewContext(wrapped, context, { filename: "contentScript.js" });
@@ -664,6 +666,63 @@ test("CheckCaptionIsDisplaying reflects the subtitle button aria-pressed state",
 
   // ボタンが無ければ false
   assert.equal(loadContentScriptEnvironment().exports.CheckCaptionIsDisplaying(), false);
+});
+
+function makeToggleButton(initialPressed) {
+  const button = {
+    pressed: initialPressed,
+    clickCount: 0,
+    click() {
+      button.clickCount += 1;
+      button.pressed = button.pressed === 'true' ? 'false' : 'true';
+    },
+    getAttribute(name) {
+      return name === 'aria-pressed' ? button.pressed : null;
+    }
+  };
+  return button;
+}
+
+test("doubleClickWithDelay restores the original state when aria-pressed toggles normally (starts off)", async () => {
+  const mod = loadContentScriptEnvironment({ setTimeoutImpl: (fn) => { fn(); return 1; } }).exports;
+  const button = makeToggleButton('false');
+  await mod.doubleClickWithDelay(button);
+  assert.equal(button.pressed, 'false');
+  assert.equal(button.clickCount, 2);
+});
+
+test("doubleClickWithDelay restores the original state when aria-pressed toggles normally (starts on)", async () => {
+  const mod = loadContentScriptEnvironment({ setTimeoutImpl: (fn) => { fn(); return 1; } }).exports;
+  const button = makeToggleButton('true');
+  await mod.doubleClickWithDelay(button);
+  assert.equal(button.pressed, 'true');
+  assert.equal(button.clickCount, 4);
+});
+
+test("doubleClickWithDelay stops clicking after DOUBLE_CLICK_MAX_RETRY when aria-pressed is stuck at true", async () => {
+  // click() しても aria-pressed が変化しない異常系(読み込み遅延やUIの固着を想定)。
+  // 修正前はここで無限に連打し続けていた。
+  const mod = loadContentScriptEnvironment({ setTimeoutImpl: (fn) => { fn(); return 1; } }).exports;
+  const button = {
+    clickCount: 0,
+    click() { button.clickCount += 1; },
+    getAttribute(name) { return name === 'aria-pressed' ? 'true' : null; }
+  };
+  await mod.doubleClickWithDelay(button);
+  assert.equal(button.clickCount, 2 + mod.DOUBLE_CLICK_MAX_RETRY);
+});
+
+test("doubleClickWithDelay does not hang when aria-pressed never appears (stuck at null)", async () => {
+  // aria-pressed が一切観測できない異常系。修正前はここも無限ループしていた。
+  const mod = loadContentScriptEnvironment({ setTimeoutImpl: (fn) => { fn(); return 1; } }).exports;
+  const button = {
+    clickCount: 0,
+    click() { button.clickCount += 1; },
+    getAttribute() { return null; }
+  };
+  await mod.doubleClickWithDelay(button);
+  // ariaPressed が null の間はループ内でクリックしないため、初回の2回だけで終わる
+  assert.equal(button.clickCount, 2);
 });
 
 test("GetYtpVolumePanelValue reads the HTML volume panel and clamps to [0,1]", () => {
